@@ -323,37 +323,3 @@ export function pnlByWeekday(list) {
 export function pctOfAccount(net, accountSize) {
   return accountSize > 0 ? Math.round((net / accountSize) * 10000) / 100 : null;
 }
-
-// ------------------------------------------------------------ account rules
-
-/**
- * Prop-firm style limits.
- *   daily: today's net vs the daily loss limit → {net, limit, used, left, breached}
- *   trailing drawdown: the balance may not fall more than `limit` below its
- *   highest end-of-day value (starting balance counts as the first high).
- * Trades before `since` (ISO or day key) are ignored. Limits ≤ 0 are off (null).
- */
-export function accountRules(list, { dailyLossLimit, maxDrawdown: ddLimit, since } = {}, now = new Date()) {
-  const from = since ? new Date(since.length === 10 ? `${since}T00:00:00` : since) : null;
-  const trades = from ? list.filter((t) => new Date(t.dateTime) >= from) : list;
-  let daily = null;
-  if (dailyLossLimit > 0) {
-    const today = dayKey(now);
-    const net = round2(trades.filter((t) => dayKey(t.dateTime) === today).reduce((a, t) => a + t.m.net, 0));
-    const used = round2(Math.max(0, -net));
-    daily = { net, limit: Number(dailyLossLimit), used, left: round2(Math.max(0, dailyLossLimit - used)), breached: used >= dailyLossLimit };
-  }
-  let drawdown = null;
-  if (ddLimit > 0) {
-    const today = dayKey(now);
-    let balance = 0, highEod = 0;
-    for (const d of dailyPnl(trades)) {
-      balance = round2(balance + d.net);
-      if (d.day < today) highEod = Math.max(highEod, balance); // a day's close counts once it is over
-    }
-    const floor = round2(highEod - ddLimit);
-    const left = round2(Math.max(0, balance - floor));
-    drawdown = { balance, highEod, floor, limit: Number(ddLimit), left, used: round2(ddLimit - left), breached: balance <= floor };
-  }
-  return { daily, drawdown };
-}

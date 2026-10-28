@@ -5,10 +5,9 @@
 import * as store from '../store.js';
 import {
   enrich, inPeriod, summarize, equityCurve, maxDrawdown, bestWorstDay, pnlBySetup, costOfMistakes, dailyPnl, pnlByField,
-  pnlByHour, pnlByWeekday, accountRules,
+  pnlByHour, pnlByWeekday,
 } from '../calc.js';
 import { pageSwipe, slideIn } from '../gestures.js';
-import { rulesHtml } from './rules.js';
 import { detailsFor } from '../defaults.js';
 import { money, pct, ratio, tone, shortDate, monthShort, fromDayKey, esc } from '../format.js';
 
@@ -83,7 +82,6 @@ export async function render(el, { settings, refresh }) {
   const all = enrich(await store.listTrades(), settings);
   const list = inPeriod(all, period);
   const s = summarize(list);
-  const rules = accountRules(all, { maxDrawdown: settings.drawdownLimit, since: settings.accountStart });
   const hours = pnlByHour(list);
   const weekdays = pnlByWeekday(list);
   const days = dailyPnl(list);
@@ -108,7 +106,6 @@ export async function render(el, { settings, refresh }) {
       ${PERIODS.map(([k, label]) => `<button type="button" data-period="${k}" aria-pressed="${period === k}">${label}</button>`).join('')}
     </div>
     <div class="swipe-area" data-swipe><div class="swipe-content" data-swipe-content>
-    ${rules.drawdown ? rulesHtml({ drawdown: rules.drawdown }, 'form-block') : ''}
     ${!list.length ? `
       <div class="card form-block"><div class="empty"><strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
         ${all.length ? 'Swipe or pick a longer period.' : 'Stats appear once you log trades.'}

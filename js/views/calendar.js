@@ -34,7 +34,7 @@ function figure(mode, s, settings, compact) {
       return { text: compact ? (p === null ? '—' : signed(p, Math.abs(p) >= 10 ? 1 : 2)) : pctSigned(p), cls: tone(s.net) };
     }
     case 'trades':
-      return { text: compact ? String(s.count) : `${s.count} trade${s.count === 1 ? '' : 's'}`, cls: 'flat' };
+      return { html: `<b>${s.count}</b> trade${s.count === 1 ? '' : 's'}`, text: `${s.count} trade${s.count === 1 ? '' : 's'}`, cls: compact ? 'flat v-count' : 'flat' };
     case 'winrate': {
       const decided = s.wins + s.losses;
       return { text: decided ? pct(s.wins / decided) : '—', cls: 'flat' };
@@ -105,13 +105,13 @@ export async function render(el, { settings, go, refresh }) {
       const label = `${dayLabel(k)}${info ? `, ${money(info.net)}, ${info.count} trade${info.count === 1 ? '' : 's'}` : ', no trades'}`;
       cells += `<button class="${cls}" data-day="${k}" aria-label="${esc(label)}" aria-pressed="${k === selected}">
         <span class="d">${d.getDate()}</span>
-        ${info ? (() => { const f = figure(mode, dayTally.get(k), settings, true); return `<span class="v ${f.cls}">${f.text}</span>`; })()
+        ${info ? (() => { const f = figure(mode, dayTally.get(k), settings, true); return `<span class="v ${f.cls}">${f.html || f.text}</span>`; })()
           : k === todayKey ? '<span class="today-label">today</span>' : ''}
       </button>`;
     }
     const wf = week.count ? figure(mode, week, settings, true) : null;
     cells += `<div class="cal-cell cal-week"><span class="d">WK</span>${wf
-      ? `<span class="v ${wf.cls}">${wf.text}</span>` : ''}</div>`;
+      ? `<span class="v ${wf.cls}">${wf.html || wf.text}</span>` : ''}</div>`;
   }
 
   const sel = selected ? days.get(selected) : null;

@@ -288,22 +288,6 @@ export const tests = [
     eq(w.map((r) => r.key).join(), '1,3');
     eq(w[1].net, 30);
   }],
-  ['account rules: daily loss limit and trailing EOD drawdown', () => {
-    const mk = (day, n, hh = 10) => {
-      const t = net(n, { dateTime: new Date(2026, 9, day, hh).toISOString() });
-      return { ...t, m: calc.tradeMetrics(t, MNQ) };
-    };
-    const now = new Date(2026, 9, 23, 12);
-    const list = [mk(20, 400), mk(21, -150), mk(22, 300), mk(23, -100), mk(23, -80, 11)];
-    const r = calc.accountRules(list, { dailyLossLimit: 500, maxDrawdown: 1000 }, now);
-    eq(r.daily.net, -180); eq(r.daily.used, 180); eq(r.daily.left, 320); eq(r.daily.breached, false);
-    // EOD highs: 400, 250, 550 → high 550 (today's close not counted yet). Balance 370.
-    eq(r.drawdown.highEod, 550); eq(r.drawdown.floor, -450); eq(r.drawdown.balance, 370); eq(r.drawdown.left, 820);
-    const since = calc.accountRules(list, { maxDrawdown: 1000, since: '2026-10-22' }, now);
-    eq(since.drawdown.balance, 120); eq(since.drawdown.highEod, 300);
-    eq(calc.accountRules(list, {}, now).daily, null);
-    eq(calc.accountRules([mk(23, -600)], { dailyLossLimit: 500 }, now).daily.breached, true);
-  }],
   ['percent of account size', () => {
     eq(calc.pctOfAccount(95, 50000), 0.19);
     eq(calc.pctOfAccount(-250, 50000), -0.5);

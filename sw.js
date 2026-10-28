@@ -1,5 +1,5 @@
 // sw.js — offline cache. Bump VERSION on every deploy so phones pick up the update.
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const CACHE = `tj-${VERSION}`;
 
 const ASSETS = [
@@ -25,7 +25,6 @@ const ASSETS = [
   './js/sample.js',
   './js/store.js',
   './js/ui.js',
-  './js/views/rules.js',
   './js/viewer.js',
   './js/gestures.js',
   './js/views/calendar.js',

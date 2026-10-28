@@ -753,6 +753,9 @@ button.cal-cell { border-color: var(--line); }
 .today-chip { min-height: 36px; padding: 0 12px; font-size: 14px; margin-left: 10px; }
 .month-sum .legend { margin-left: auto; }
 .cal-mode { margin-top: 12px; }
+/* Trades view: the count, with "trade(s)" on the line below */
+.cal-cell .v.v-count { white-space: normal; font-family: var(--sans); font-size: 11px; font-weight: 500; color: var(--muted); line-height: 1.15; }
+.cal-cell .v.v-count b { display: block; font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--ink); }
 .cal-mode button { flex: 1; }
 .year-nav { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 10px; }
 .year-nav .num { font-size: 20px; font-weight: 700; min-width: 64px; text-align: center; }
@@ -862,18 +865,6 @@ button.cal-cell { border-color: var(--line); }
   .curve-tip .neg { color: #B4380A; }
 }
 
-/* Account limit meters */
-.rules { padding: 14px 16px; }
-.rule + .rule { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-.rule-head { display: flex; justify-content: space-between; font-weight: 600; font-size: 15px; }
-.rule-head .num { font-size: 14.5px; }
-.rule-track { height: 8px; border-radius: 4px; background: var(--soft); margin-top: 8px; overflow: hidden; }
-.rule-fill { height: 100%; border-radius: 4px; background: var(--pos); transition: width 0.3s; }
-.rule-warm .rule-fill { background: #C8961E; }
-.rule-hot .rule-fill, .rule-over .rule-fill { background: var(--neg); }
-.rule-over .rule-head .num { color: var(--neg); }
-.rule-foot { margin-top: 6px; font-size: 13px; color: var(--muted); }
-.list-row input[type="date"].input { width: 150px; text-align: left; }
 
 /* Full-screen screenshot viewer */
 .viewer {

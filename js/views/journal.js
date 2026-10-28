@@ -2,11 +2,10 @@
 // Swipe a trade left for Duplicate / Delete (with Undo).
 
 import * as store from '../store.js';
-import { enrich, summarize, inPeriod, dayKey, dailyPnl, accountRules } from '../calc.js';
+import { enrich, summarize, inPeriod, dayKey, dailyPnl } from '../calc.js';
 import { money, pts, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
 import { icons, sheet, toast } from '../ui.js';
 import { drag } from '../gestures.js';
-import { rulesHtml } from './rules.js';
 import { exportJsonBackup } from '../backup.js';
 import { detailsFor, allDetails } from '../defaults.js';
 
@@ -85,7 +84,6 @@ export async function render(el, { settings, params, go, refresh }) {
   const setups = [...new Set([...settings.setups, ...trades.map((t) => t.setup).filter(Boolean)])];
   if (state.chip.startsWith('setup:') && !setups.includes(state.chip.slice(6))) state.chip = 'all';
 
-  const rules = accountRules(trades, { dailyLossLimit: settings.dailyLossLimit, since: settings.accountStart });
   const needsBackup = trades.some((t) => !t.sample)
     && (!settings.lastBackupAt || daysAgo(settings.lastBackupAt) > 7) && !backupBannerHidden;
 
@@ -118,7 +116,6 @@ export async function render(el, { settings, params, go, refresh }) {
         <div><span>Profit factor</span><b>${ratio(month.profitFactor)}</b></div>
       </div>
     </section>
-    ${rulesHtml({ daily: rules.daily }, 'form-block')}
     <div class="chips journal-filters" role="toolbar" aria-label="Show"></div>
     <div data-list></div>`;
 

@@ -48,11 +48,11 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 
 | Screen | What it does |
 | --- | --- |
-| **Journal** | This month's net P&L, win rate, trade count and profit factor, plus today's daily-loss meter if you set a limit. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first, and the day header stays pinned while you scroll. Tap a trade to edit it; swipe it left for **Duplicate** and **Delete** (with Undo). |
+| **Journal** | This month's net P&L, win rate, trade count and profit factor. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first, and the day header stays pinned while you scroll. Tap a trade to edit it; swipe it left for **Duplicate** and **Delete** (with Undo). |
 | **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
 | **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Switch what the days show: **$** P&L, **%** of account size, **Trades** taken or **Win %** (colours always follow P&L). Tap a day to see its trades. Weekend trades count in the week total. |
-| **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Trailing-drawdown meter if you set a limit, equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
-| **Settings** | Instruments, commission, account limits, entry reason and mistake lists, backup and restore, sample data, app version. |
+| **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
+| **Settings** | Instruments, commission, account size, entry reason and mistake lists, backup and restore, sample data, app version. |
 
 ### Logging faster
 - **New trades start from your last one**: same instrument, contracts and entry reason. Trend/pullback/depth are left blank on purpose.
@@ -64,14 +64,8 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 - **Close the form** by dragging its header down or swiping in from the left edge. You're asked first if anything changed.
 - **Screenshots** open full screen: pinch or double-tap to zoom, swipe sideways for the next one, swipe down to close.
 
-### Account limits (Tradeify)
-Settings → Account limits takes your **account size** (the starting balance, e.g. 50000; used for % on the Calendar, where % = day net ÷ account size) and two dollar amounts from your Tradeify account rules. Leave either blank to hide its meter.
-
-- **Daily loss limit**: the Journal shows today's loss against it. The bar turns amber at 50% used and red at 75%.
-- **Trailing drawdown**: Stats shows how far the balance can fall before it reaches the floor. The floor is the highest **end-of-day** balance minus the limit; today's close only counts once the day is over.
-- **Count trades from**: set this when you start a new account so older trades don't count toward the limits.
-
-These meters are a guide only. Your Tradeify dashboard is the source of truth, because their exact rules (for example when the drawdown stops trailing) depend on the account type.
+### Account size
+Settings → Account → **Account size** is your starting balance (e.g. 50000 for a 50K account). It's only used for the Calendar's **%** view, where % = day net ÷ account size.
 
 ### Entry reasons
 Every trade gets one entry reason: **Trend Pullback**, **Disconnect Fade** or **Range Fade**. Picking Trend Pullback shows three more choices:
@@ -154,7 +148,7 @@ trading-journal/
     ├── sample.js         sample data
     ├── pwa.js            service-worker registration + update banner
     ├── tests/calc.test.js
-    └── views/            journal, trade (log/edit), calendar, stats, settings, rules (limit meters)
+    └── views/            journal, trade (log/edit), calendar, stats, settings
 ```
 
 ## Adding cloud sync later

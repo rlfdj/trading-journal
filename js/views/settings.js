@@ -1,4 +1,4 @@
-// Settings: instruments, commission, account limits, setup/mistake lists, backup & restore, sample data.
+// Settings: instruments, commission, account size, setup/mistake lists, backup & restore, sample data.
 
 import * as store from '../store.js';
 import { moneyPlain, shortDate, daysAgo, esc } from '../format.js';
@@ -61,26 +61,13 @@ export async function render(el, { settings, refresh }) {
       </div>
     </div>
 
-    <p class="section-label">Account limits</p>
+    <p class="section-label">Account</p>
     <div class="card list">
       <div class="list-row">
         <label class="grow" for="acct-size">Account size<div class="sub">Starting balance, e.g. 50000 for a 50K account. Used for % on the Calendar.</div></label>
-        <input class="input num" id="acct-size" inputmode="decimal" placeholder="Off" data-limit="accountSize" value="${settings.accountSize ? esc(settings.accountSize) : ''}">
-      </div>
-      <div class="list-row">
-        <label class="grow" for="daily-limit">Daily loss limit<div class="sub">Meter on the Journal for today.</div></label>
-        <input class="input num" id="daily-limit" inputmode="decimal" placeholder="Off" data-limit="dailyLossLimit" value="${settings.dailyLossLimit ? esc(settings.dailyLossLimit) : ''}">
-      </div>
-      <div class="list-row">
-        <label class="grow" for="dd-limit">Trailing drawdown<div class="sub">From the highest end-of-day balance. Meter on Stats.</div></label>
-        <input class="input num" id="dd-limit" inputmode="decimal" placeholder="Off" data-limit="drawdownLimit" value="${settings.drawdownLimit ? esc(settings.drawdownLimit) : ''}">
-      </div>
-      <div class="list-row">
-        <label class="grow" for="acct-start">Count trades from<div class="sub">Set when you start a new account. Blank = all trades.</div></label>
-        <input class="input" type="date" id="acct-start" data-acct-start value="${esc(settings.accountStart || '')}">
+        <input class="input num" id="acct-size" inputmode="decimal" placeholder="Not set" data-money="accountSize" value="${settings.accountSize ? esc(settings.accountSize) : ''}">
       </div>
     </div>
-    <p class="note">Copy these from your Tradeify account rules. Leave blank to hide the meter.</p>
 
     ${listCard('setups', settings.setups, settings)}
     ${listCard('mistakes', settings.mistakes, settings)}
@@ -148,23 +135,20 @@ export async function render(el, { settings, refresh }) {
     await save({ commission: v }, `Commission set to ${moneyPlain(v)} per contract`);
   };
 
-  el.querySelectorAll('[data-limit]').forEach((input) => {
+  el.querySelectorAll('[data-money]').forEach((input) => {
     input.onchange = async () => {
-      const key = input.dataset.limit;
+      const key = input.dataset.money;
       const raw = input.value.trim().replace(/[$,\s]/g, '');
       const v = raw === '' ? null : Number(raw);
       if (v !== null && !(Number.isFinite(v) && v > 0)) {
-        toast('Enter a dollar amount like 1000, or leave blank');
+        toast('Enter a dollar amount like 50000, or leave blank');
         input.value = settings[key] || '';
         return;
       }
       input.value = v ?? '';
-      const name = { dailyLossLimit: 'Daily loss limit', drawdownLimit: 'Trailing drawdown', accountSize: 'Account size' }[key];
-      await save({ [key]: v }, v ? `${name} set to ${moneyPlain(v)}` : `${name} cleared`);
+      await save({ [key]: v }, v ? `Account size set to ${moneyPlain(v)}` : 'Account size cleared');
     };
   });
-  el.querySelector('[data-acct-start]').onchange = (e) => save({ accountStart: e.target.value || null },
-    e.target.value ? `Limits count trades from ${shortDate(e.target.value)}` : 'Limits count all trades');
 
   el.querySelector('[data-sample]').onchange = async (e) => {
     const on = e.target.checked;
