@@ -1,4 +1,4 @@
-// Settings: instruments, commission, setup/mistake lists, backup & restore, sample data.
+// Settings: instruments, commission, account limits, setup/mistake lists, backup & restore, sample data.
 
 import * as store from '../store.js';
 import { moneyPlain, shortDate, daysAgo, esc } from '../format.js';
@@ -60,6 +60,23 @@ export async function render(el, { settings, refresh }) {
         <input class="input num" id="commission" inputmode="decimal" data-commission value="${esc(Number(settings.commission).toFixed(2))}">
       </div>
     </div>
+
+    <p class="section-label">Account limits</p>
+    <div class="card list">
+      <div class="list-row">
+        <label class="grow" for="daily-limit">Daily loss limit<div class="sub">Meter on the Journal for today.</div></label>
+        <input class="input num" id="daily-limit" inputmode="decimal" placeholder="Off" data-limit="dailyLossLimit" value="${settings.dailyLossLimit ? esc(settings.dailyLossLimit) : ''}">
+      </div>
+      <div class="list-row">
+        <label class="grow" for="dd-limit">Trailing drawdown<div class="sub">From the highest end-of-day balance. Meter on Stats.</div></label>
+        <input class="input num" id="dd-limit" inputmode="decimal" placeholder="Off" data-limit="drawdownLimit" value="${settings.drawdownLimit ? esc(settings.drawdownLimit) : ''}">
+      </div>
+      <div class="list-row">
+        <label class="grow" for="acct-start">Count trades from<div class="sub">Set when you start a new account. Blank = all trades.</div></label>
+        <input class="input" type="date" id="acct-start" data-acct-start value="${esc(settings.accountStart || '')}">
+      </div>
+    </div>
+    <p class="note">Copy these from your Tradeify account rules. Leave blank to hide the meter.</p>
 
     ${listCard('setups', settings.setups, settings)}
     ${listCard('mistakes', settings.mistakes, settings)}
@@ -126,6 +143,23 @@ export async function render(el, { settings, refresh }) {
     if (!Number.isFinite(v) || v < 0) { toast('Enter a commission like 1.82'); commission.value = settings.commission; return; }
     await save({ commission: v }, `Commission set to ${moneyPlain(v)} per contract`);
   };
+
+  el.querySelectorAll('[data-limit]').forEach((input) => {
+    input.onchange = async () => {
+      const key = input.dataset.limit;
+      const raw = input.value.trim().replace(/[$,\s]/g, '');
+      const v = raw === '' ? null : Number(raw);
+      if (v !== null && !(Number.isFinite(v) && v > 0)) {
+        toast('Enter a dollar amount like 1000, or leave blank');
+        input.value = settings[key] || '';
+        return;
+      }
+      input.value = v ?? '';
+      await save({ [key]: v }, v ? `${key === 'dailyLossLimit' ? 'Daily loss limit' : 'Trailing drawdown'} set to ${moneyPlain(v)}` : 'Meter turned off');
+    };
+  });
+  el.querySelector('[data-acct-start]').onchange = (e) => save({ accountStart: e.target.value || null },
+    e.target.value ? `Limits count trades from ${shortDate(e.target.value)}` : 'Limits count all trades');
 
   el.querySelector('[data-sample]').onchange = async (e) => {
     const on = e.target.checked;

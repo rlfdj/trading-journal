@@ -129,16 +129,32 @@ export async function saveTrade(trade) {
   return record;
 }
 
-/** Soft delete the trade and its screenshots. */
+/**
+ * Soft delete the trade and its screenshots. Resolves with what was removed
+ * ({trade, shots}) so the caller can offer Undo via restoreTrade().
+ */
 export async function deleteTrade(id) {
-  await withTx([TRADES, SHOTS], 'readwrite', async (s) => {
+  return withTx([TRADES, SHOTS], 'readwrite', async (s) => {
     const t = await wrap(s[TRADES].get(id));
-    if (!t) return;
+    if (!t) return null;
+    const shots = [];
     for (const sid of t.screenshotIds || []) {
       const shot = await wrap(s[SHOTS].get(sid));
-      if (shot) await wrap(s[SHOTS].put(stamp({ ...shot, blob: null, deleted: true })));
+      if (!shot) continue;
+      if (!shot.deleted) shots.push(shot);
+      await wrap(s[SHOTS].put(stamp({ ...shot, blob: null, deleted: true })));
     }
     await wrap(s[TRADES].put(stamp({ ...t, deleted: true })));
+    return { trade: t, shots };
+  });
+}
+
+/** Undo a deleteTrade(): bring back the trade and its screenshots. */
+export async function restoreTrade(removed) {
+  if (!removed) return;
+  await withTx([TRADES, SHOTS], 'readwrite', async (s) => {
+    for (const shot of removed.shots) await wrap(s[SHOTS].put(stamp({ ...shot, deleted: false })));
+    await wrap(s[TRADES].put(stamp({ ...removed.trade, deleted: false })));
   });
 }
 

@@ -1,9 +1,12 @@
 // Journal (home): month summary, filters, trades grouped by day.
+// Swipe a trade left for Duplicate / Delete (with Undo).
 
 import * as store from '../store.js';
-import { enrich, summarize, inPeriod, dayKey, dailyPnl } from '../calc.js';
+import { enrich, summarize, inPeriod, dayKey, dailyPnl, accountRules } from '../calc.js';
 import { money, pts, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
-import { icons, sheet } from '../ui.js';
+import { icons, sheet, toast } from '../ui.js';
+import { drag } from '../gestures.js';
+import { rulesHtml } from './rules.js';
 import { exportJsonBackup } from '../backup.js';
 import { detailsFor, allDetails } from '../defaults.js';
 
@@ -21,6 +24,8 @@ const state = {
   // plus one key per setup detail (trend, pullbackTo, depth), added as used
 };
 let backupBannerHidden = false;
+const ACTIONS_W = 156; // width of the Duplicate + Delete buttons behind a row
+let openRow = null;    // the row currently swiped open
 
 /** "Strong Trend · EMA · Shallow" for a trade's setup details, or ''. */
 export function detailText(t, settings) {
@@ -72,6 +77,7 @@ const filterCount = (settings) => filterKeys(settings).filter((k) => state[k]).l
 
 export async function render(el, { settings, params, go, refresh }) {
   const trades = enrich(await store.listTrades(), settings);
+  openRow = null;
   const now = new Date();
   const month = summarize(inPeriod(trades, 'month', now));
   const monthInstruments = [...new Set(inPeriod(trades, 'month', now).map((t) => t.instrument))];
@@ -79,6 +85,7 @@ export async function render(el, { settings, params, go, refresh }) {
   const setups = [...new Set([...settings.setups, ...trades.map((t) => t.setup).filter(Boolean)])];
   if (state.chip.startsWith('setup:') && !setups.includes(state.chip.slice(6))) state.chip = 'all';
 
+  const rules = accountRules(trades, { dailyLossLimit: settings.dailyLossLimit, since: settings.accountStart });
   const needsBackup = trades.some((t) => !t.sample)
     && (!settings.lastBackupAt || daysAgo(settings.lastBackupAt) > 7) && !backupBannerHidden;
 
@@ -111,6 +118,7 @@ export async function render(el, { settings, params, go, refresh }) {
         <div><span>Profit factor</span><b>${ratio(month.profitFactor)}</b></div>
       </div>
     </section>
+    ${rulesHtml({ daily: rules.daily }, 'form-block')}
     <div class="chips journal-filters" role="toolbar" aria-label="Show"></div>
     <div data-list></div>`;
 
@@ -125,12 +133,14 @@ export async function render(el, { settings, params, go, refresh }) {
 
   function drawList() {
     if (!trades.length) {
-      listEl.innerHTML = `<div class="empty"><strong>No trades yet</strong>Tap + to log your first trade.</div>`;
+      listEl.innerHTML = `<div class="empty"><strong>No trades yet</strong>Log your first trade, or import a spreadsheet in Settings.
+        <a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a></div>`;
       return;
     }
     const shown = trades.filter((t) => matches(t, settings));
     if (!shown.length) {
-      listEl.innerHTML = `<div class="empty"><strong>No matching trades</strong>Try another filter.</div>`;
+      listEl.innerHTML = `<div class="empty"><strong>No matching trades</strong>Try another filter.
+        <button class="btn btn-soft empty-cta" data-act="clear-filters">Show all trades</button></div>`;
       return;
     }
     const groups = [];
@@ -143,8 +153,64 @@ export async function render(el, { settings, params, go, refresh }) {
       <section id="day-${g.key}">
         <h2 class="day-head"><span>${dayLabel(g.key)}</span>
           <span class="num ${tone(dayNet.get(g.key))}">${money(dayNet.get(g.key))}</span></h2>
-        <div class="card trade-list">${g.trades.map((t) => tradeRowHtml(t, settings)).join('')}</div>
+        <div class="card trade-list">${g.trades.map((t) => `
+          <div class="swipe-row" data-row="${esc(t.id)}">
+            <div class="row-behind">
+              <button type="button" class="row-act" data-dup="${esc(t.id)}">${icons.copy}<span>Duplicate</span></button>
+              <button type="button" class="row-act danger" data-del="${esc(t.id)}">${icons.trash}<span>Delete</span></button>
+            </div>
+            ${tradeRowHtml(t, settings)}
+          </div>`).join('')}</div>
       </section>`).join('');
+    listEl.querySelectorAll('.swipe-row').forEach(swipeRow);
+  }
+
+  function setOffset(row, x, animate = true) {
+    const front = row.querySelector('.trade-row');
+    front.style.transition = animate ? '' : 'none';
+    front.style.transform = x ? `translateX(${x}px)` : '';
+    row.classList.toggle('open', x !== 0);
+  }
+
+  function closeOpenRow() {
+    if (openRow) { setOffset(openRow, 0); openRow = null; return true; }
+    return false;
+  }
+
+  function swipeRow(row) {
+    let base = 0;
+    drag(row, {
+      axis: 'x',
+      shouldStart: () => {
+        base = openRow === row ? -ACTIONS_W : 0;
+        return true;
+      },
+      move(dx) {
+        if (openRow && openRow !== row) closeOpenRow();
+        let x = base + dx;
+        if (x > 0) x = x / 4;
+        if (x < -ACTIONS_W) x = -ACTIONS_W + (x + ACTIONS_W) / 4;
+        setOffset(row, x, false);
+      },
+      end({ dx, vx, cancelled }) {
+        const x = base + dx;
+        const open = !cancelled && (x < -ACTIONS_W / 2 || (vx < -0.4 && dx < -20)) && !(vx > 0.4);
+        setOffset(row, open ? -ACTIONS_W : 0);
+        openRow = open ? row : null;
+      },
+    });
+  }
+
+  async function removeTrade(id) {
+    const row = listEl.querySelector(`[data-row="${CSS.escape(id)}"]`);
+    if (row) row.classList.add('removing');
+    openRow = null;
+    const removed = await store.deleteTrade(id);
+    setTimeout(refresh, row ? 180 : 0);
+    toast('Trade deleted', {
+      action: 'Undo',
+      onAction: async () => { await store.restoreTrade(removed); toast('Trade restored'); refresh(); },
+    });
   }
 
   drawChips();
@@ -157,6 +223,12 @@ export async function render(el, { settings, params, go, refresh }) {
   }
 
   el.onclick = async (e) => {
+    const dup = e.target.closest('[data-dup]');
+    if (dup) { closeOpenRow(); go(`#/trade/new?copy=${encodeURIComponent(dup.dataset.dup)}`); return; }
+    const del = e.target.closest('[data-del]');
+    if (del) { await removeTrade(del.dataset.del); return; }
+    // A tap anywhere while a row is open just closes it.
+    if (closeOpenRow()) return;
     const row = e.target.closest('[data-id]');
     if (row) { go(`#/trade/${row.dataset.id}`); return; }
     const chip = e.target.closest('[data-chip]');
@@ -171,6 +243,11 @@ export async function render(el, { settings, params, go, refresh }) {
       refresh();
     } else if (act === 'backup') {
       if (await exportJsonBackup()) refresh();
+    } else if (act === 'clear-filters') {
+      state.chip = 'all';
+      state.query = '';
+      filterKeys(settings).forEach((k) => { state[k] = null; });
+      refresh();
     } else if (act === 'hide-backup') {
       backupBannerHidden = true;
       refresh();

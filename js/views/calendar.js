@@ -1,13 +1,16 @@
 // Calendar: Mon–Fri month grid with weekly totals; tap a day to list its trades.
+// Swipe the grid sideways to change month; tap the month name to jump.
 
 import * as store from '../store.js';
 import { enrich, summarize, dailyPnl, dayKey, round2 } from '../calc.js';
-import { money, moneyCompact, tone, dayLabel, time, monthShort, esc } from '../format.js';
-import { icons } from '../ui.js';
+import { money, moneyCompact, tone, dayLabel, time, monthShort, monthName, esc } from '../format.js';
+import { icons, sheet } from '../ui.js';
+import { pageSwipe, slideIn } from '../gestures.js';
 
 const today = () => new Date();
 let shown = null;     // first day of the month being viewed
 let selected = null;  // selected day key
+let slideDir = 0;     // direction of the last month change, for the slide-in
 
 function shade(net, maxAbs) {
   if (!net) return '';
@@ -69,27 +72,33 @@ export async function render(el, { settings, go, refresh }) {
   const sel = selected ? days.get(selected) : null;
   const selTrades = selected ? trades.filter((t) => dayKey(t.dateTime) === selected).reverse() : [];
 
+  const isThisMonth = y === now.getFullYear() && mo === now.getMonth();
   el.innerHTML = `
     <header class="page-head">
       <h1 class="page-title">Calendar</h1>
       <div class="month-nav">
         <button class="icon-btn bare" data-nav="-1" aria-label="Previous month">${icons.left}</button>
-        <span class="label">${monthShort(mo)} ${y}</span>
+        <button class="label month-pick" data-pick aria-label="Choose month, showing ${monthName(mo)} ${y}">${monthShort(mo)} ${y}</button>
         <button class="icon-btn bare" data-nav="1" aria-label="Next month">${icons.right}</button>
       </div>
     </header>
 
+    <div class="swipe-area" data-swipe>
+    <div class="swipe-content" data-swipe-content>
     <section class="card month-sum">
       <div><div class="label">Month net</div><div class="num ${tone(month.net)}">${money(month.net)}</div></div>
       <div class="legend">
         <span><i style="background:var(--pos)"></i>${up} up</span>
         <span><i style="background:var(--neg)"></i>${down} down</span>
       </div>
+      ${isThisMonth ? '' : '<button class="chip today-chip" data-today>Today</button>'}
     </section>
 
     <div class="cal-grid" role="grid" aria-label="${monthShort(mo)} ${y}">
       ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Week'].map((d) => `<div class="cal-dow">${d}</div>`).join('')}
       ${cells}
+    </div>
+    </div>
     </div>
     ${hasWeekend ? '<p class="note">Weekend trades are counted in the week total.</p>' : ''}
 
@@ -109,12 +118,33 @@ export async function render(el, { settings, go, refresh }) {
       ${selTrades.length ? '<button class="btn btn-ghost btn-block" data-journal>Open in Journal</button>' : ''}
     </section>` : ''}`;
 
-  el.onclick = (e) => {
+  const changeMonth = (target, dir) => {
+    shown = target;
+    selected = null;
+    slideDir = dir;
+    refresh();
+  };
+  const area = el.querySelector('[data-swipe]');
+  const content = el.querySelector('[data-swipe-content]');
+  slideIn(content, slideDir);
+  slideDir = 0;
+  pageSwipe(area, content, { onSwipe: (dir) => changeMonth(new Date(y, mo + dir, 1), dir) });
+
+  el.onclick = async (e) => {
     const nav = e.target.closest('[data-nav]');
     if (nav) {
-      shown = new Date(y, mo + Number(nav.dataset.nav), 1);
-      selected = null;
-      refresh();
+      const dir = Number(nav.dataset.nav);
+      changeMonth(new Date(y, mo + dir, 1), dir);
+      return;
+    }
+    if (e.target.closest('[data-today]')) {
+      const target = new Date(now.getFullYear(), now.getMonth(), 1);
+      changeMonth(target, target > shown ? 1 : -1);
+      return;
+    }
+    if (e.target.closest('[data-pick]')) {
+      const picked = await pickMonth(y, mo, settings);
+      if (picked) changeMonth(picked, picked > shown ? 1 : picked < shown ? -1 : 0);
       return;
     }
     const day = e.target.closest('[data-day]');
@@ -124,4 +154,43 @@ export async function render(el, { settings, go, refresh }) {
     if (e.target.closest('[data-journal]')) go(`#/journal?day=${selected}`);
     if (e.target.closest('[data-log]')) go(`#/trade/new?day=${selected}`);
   };
+}
+
+/** Sheet with a year switcher and 12 months, each showing its net. */
+function pickMonth(year, month, settings) {
+  const now = today();
+  return sheet('Go to month', (body, close) => {
+    let yr = year;
+    const draw = async () => {
+      const trades = enrich(await store.listTrades({ from: new Date(yr, 0, 1), to: new Date(yr + 1, 0, 1) }), settings);
+      const byMonth = new Map();
+      for (const t of trades) {
+        const m = new Date(t.dateTime).getMonth();
+        byMonth.set(m, round2((byMonth.get(m) || 0) + t.m.net));
+      }
+      body.innerHTML = `
+        <div class="year-nav">
+          <button class="icon-btn bare" data-y="-1" aria-label="Previous year">${icons.left}</button>
+          <span class="num">${yr}</span>
+          <button class="icon-btn bare" data-y="1" aria-label="Next year">${icons.right}</button>
+        </div>
+        <div class="month-grid">
+          ${[...Array(12).keys()].map((m) => {
+            const net = byMonth.get(m);
+            const cls = ['month-btn', yr === year && m === month ? 'selected' : '', yr === now.getFullYear() && m === now.getMonth() ? 'current' : ''].filter(Boolean).join(' ');
+            return `<button class="${cls}" data-m="${m}"><span>${monthShort(m)}</span>
+              <span class="num ${net === undefined ? 'muted' : tone(net)}">${net === undefined ? '—' : moneyCompact(net)}</span></button>`;
+          }).join('')}
+        </div>
+        <button class="btn btn-soft btn-block form-block" data-now>This month</button>`;
+    };
+    draw();
+    body.onclick = (e) => {
+      const yb = e.target.closest('[data-y]');
+      if (yb) { yr += Number(yb.dataset.y); draw(); return; }
+      const mb = e.target.closest('[data-m]');
+      if (mb) { close(new Date(yr, Number(mb.dataset.m), 1)); return; }
+      if (e.target.closest('[data-now]')) close(new Date(now.getFullYear(), now.getMonth(), 1));
+    };
+  });
 }

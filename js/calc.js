@@ -246,3 +246,109 @@ export function inPeriod(list, period, now = new Date()) {
   if (!start) return list;
   return list.filter((t) => new Date(t.dateTime) >= start);
 }
+
+// ------------------------------------------------------------ price entry
+
+/** Nearest whole tick. */
+export function snapToTick(price, tick) {
+  if (!hasNum(price) || !(tick > 0)) return price;
+  return clean(Math.round(Number(price) / tick) * tick);
+}
+
+/**
+ * Shorthand price entry: typing only the last digits of a price fills the
+ * rest from a reference price. With reference 25812.25, "836.5" → 25836.5
+ * and "05" → 25805. When the shorthand could fall either side of a round
+ * number (reference 25998, typed "003"), the value nearest the reference wins.
+ * Returns the number unchanged when it is already as long as the reference.
+ */
+export function expandPrice(typed, reference) {
+  const s = String(typed ?? '').trim().replace(',', '.');
+  if (!/^\d*\.?\d*$/.test(s) || !/\d/.test(s) || !hasNum(reference) || Number(reference) <= 0) {
+    return hasNum(s) ? Number(s) : null;
+  }
+  const intDigits = (s.split('.')[0] || '').length;
+  const refDigits = String(Math.floor(Number(reference))).length;
+  const v = Number(s);
+  if (intDigits === 0 || intDigits >= refDigits) return v;
+  const step = 10 ** intDigits;
+  const base = Math.floor(Number(reference) / step) * step;
+  const candidates = [base - step, base, base + step].map((b) => clean(b + v)).filter((x) => x > 0);
+  return candidates.reduce((best, x) => (Math.abs(x - reference) < Math.abs(best - reference) ? x : best));
+}
+
+/** Stop or target price from a distance in points. kind: 'stop' | 'target'. */
+export function priceFromPoints(entry, distance, side, kind) {
+  if (!hasNum(entry) || !hasNum(distance)) return null;
+  const below = (side === 'short') === (kind === 'target');
+  return clean(Number(entry) + (below ? -1 : 1) * Math.abs(Number(distance)));
+}
+
+/** Distance in points from entry to a stop or target price. */
+export function pointsFromPrice(entry, price) {
+  if (!hasNum(entry) || !hasNum(price)) return null;
+  return clean(Math.abs(Number(price) - Number(entry)));
+}
+
+// --------------------------------------------------------- time breakdowns
+
+function groupRows(list, keyOf, order) {
+  const map = new Map();
+  for (const t of list) {
+    const k = keyOf(t);
+    const e = map.get(k) || { key: k, net: 0, count: 0, wins: 0, losses: 0 };
+    e.net = round2(e.net + t.m.net);
+    e.count++;
+    if (t.m.net > 0) e.wins++;
+    else if (t.m.net < 0) e.losses++;
+    map.set(k, e);
+  }
+  return order.filter((k) => map.has(k)).map((k) => {
+    const e = map.get(k);
+    return { ...e, winRate: e.wins + e.losses ? e.wins / (e.wins + e.losses) : null };
+  });
+}
+
+/** Net by local hour of entry: [{key: hour 0–23, net, count, wins, losses, winRate}]. */
+export function pnlByHour(list) {
+  return groupRows(list, (t) => new Date(t.dateTime).getHours(), [...Array(24).keys()]);
+}
+
+/** Net by local weekday, Monday first: key 1 = Mon … 0 = Sun. */
+export function pnlByWeekday(list) {
+  return groupRows(list, (t) => new Date(t.dateTime).getDay(), [1, 2, 3, 4, 5, 6, 0]);
+}
+
+// ------------------------------------------------------------ account rules
+
+/**
+ * Prop-firm style limits.
+ *   daily: today's net vs the daily loss limit → {net, limit, used, left, breached}
+ *   trailing drawdown: the balance may not fall more than `limit` below its
+ *   highest end-of-day value (starting balance counts as the first high).
+ * Trades before `since` (ISO or day key) are ignored. Limits ≤ 0 are off (null).
+ */
+export function accountRules(list, { dailyLossLimit, maxDrawdown: ddLimit, since } = {}, now = new Date()) {
+  const from = since ? new Date(since.length === 10 ? `${since}T00:00:00` : since) : null;
+  const trades = from ? list.filter((t) => new Date(t.dateTime) >= from) : list;
+  let daily = null;
+  if (dailyLossLimit > 0) {
+    const today = dayKey(now);
+    const net = round2(trades.filter((t) => dayKey(t.dateTime) === today).reduce((a, t) => a + t.m.net, 0));
+    const used = round2(Math.max(0, -net));
+    daily = { net, limit: Number(dailyLossLimit), used, left: round2(Math.max(0, dailyLossLimit - used)), breached: used >= dailyLossLimit };
+  }
+  let drawdown = null;
+  if (ddLimit > 0) {
+    const today = dayKey(now);
+    let balance = 0, highEod = 0;
+    for (const d of dailyPnl(trades)) {
+      balance = round2(balance + d.net);
+      if (d.day < today) highEod = Math.max(highEod, balance); // a day's close counts once it is over
+    }
+    const floor = round2(highEod - ddLimit);
+    const left = round2(Math.max(0, balance - floor));
+    drawdown = { balance, highEod, floor, limit: Number(ddLimit), left, used: round2(ddLimit - left), breached: balance <= floor };
+  }
+  return { daily, drawdown };
+}

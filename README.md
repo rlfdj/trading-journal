@@ -48,11 +48,30 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 
 | Screen | What it does |
 | --- | --- |
-| **Journal** | This month's net P&L, win rate, trade count and profit factor. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first. Tap a trade to edit it. |
-| **+** | Log a trade. The result card updates live as you type. Prices are checked against the instrument's tick size (0.25 for MNQ). |
-| **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Tap a day to see its trades. Weekend trades count in the week total. |
-| **Stats** | Week / Month / 3M / All. Equity curve, six stat tiles, P&L by entry reason, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
-| **Settings** | Instruments, commission, entry reason and mistake lists, backup and restore, sample data, app version. |
+| **Journal** | This month's net P&L, win rate, trade count and profit factor, plus today's daily-loss meter if you set a limit. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first, and the day header stays pinned while you scroll. Tap a trade to edit it; swipe it left for **Duplicate** and **Delete** (with Undo). |
+| **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
+| **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Tap a day to see its trades. Weekend trades count in the week total. |
+| **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Trailing-drawdown meter if you set a limit, equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
+| **Settings** | Instruments, commission, account limits, entry reason and mistake lists, backup and restore, sample data, app version. |
+
+### Logging faster
+- **New trades start from your last one**: same instrument, contracts and entry reason. Trend/pullback/depth are left blank on purpose.
+- **Type only the last digits of a price.** With an entry of 25812.25, typing `836.5` for the exit gives 25836.50 and `05` gives 25805.00. For the entry itself, the last trade's exit is the reference (shown greyed in the box). Type the full price whenever you want.
+- **Prices snap to the tick** (0.25 for MNQ) when you leave the field, instead of showing an error.
+- **Stop & target in points**: switch the toggle above Stop to **Points** and type `8.25` instead of a price; the price it works out to is shown underneath. The app remembers your choice. Trades always store prices.
+- **Time shortcuts** under the date: Now, −15m, −5m, −1m, +5m.
+- **Duplicate** (swipe a trade left) copies everything except notes and screenshots, at the same time. Long-press + copies your last trade, timed now.
+- **Close the form** by dragging its header down or swiping in from the left edge. You're asked first if anything changed.
+- **Screenshots** open full screen: pinch or double-tap to zoom, swipe sideways for the next one, swipe down to close.
+
+### Account limits (Tradeify)
+Settings → Account limits takes two dollar amounts from your Tradeify account rules. Leave either blank to hide its meter.
+
+- **Daily loss limit**: the Journal shows today's loss against it. The bar turns amber at 50% used and red at 75%.
+- **Trailing drawdown**: Stats shows how far the balance can fall before it reaches the floor. The floor is the highest **end-of-day** balance minus the limit; today's close only counts once the day is over.
+- **Count trades from**: set this when you start a new account so older trades don't count toward the limits.
+
+These meters are a guide only. Your Tradeify dashboard is the source of truth, because their exact rules (for example when the drawdown stops trailing) depend on the account type.
 
 ### Entry reasons
 Every trade gets one entry reason: **Trend Pullback**, **Disconnect Fade** or **Range Fade**. Picking Trend Pullback shows three more choices:
@@ -126,14 +145,16 @@ trading-journal/
     ├── calc.js           ALL trading math
     ├── defaults.js       default settings
     ├── format.js         number/date formatting
-    ├── ui.js             icons, toast, bottom sheets
+    ├── ui.js             icons, toast (with Undo), bottom sheets
+    ├── gestures.js       swipe / drag / long-press helpers
+    ├── viewer.js         full-screen screenshot viewer (pinch zoom)
     ├── image.js          screenshot compression (1600 px, JPEG 0.8)
     ├── backup.js         JSON/CSV export + import, share sheet
     ├── csv.js            CSV parse/write
     ├── sample.js         sample data
     ├── pwa.js            service-worker registration + update banner
     ├── tests/calc.test.js
-    └── views/            journal, trade (log/edit), calendar, stats, settings
+    └── views/            journal, trade (log/edit), calendar, stats, settings, rules (limit meters)
 ```
 
 ## Adding cloud sync later

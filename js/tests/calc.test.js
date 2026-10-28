@@ -253,6 +253,57 @@ export const tests = [
     eq(JSON.stringify(csv.parseCsv('a,b\n1,"x, y"\n')), JSON.stringify([['a', 'b'], ['1', 'x, y']]));
     eq(JSON.stringify(csv.parseCsv('a;b\r\n1;2,5\r\n')), JSON.stringify([['a', 'b'], ['1', '2,5']]));
   }],
+  ['price shorthand: last digits fill from the reference', () => {
+    eq(calc.expandPrice('836.5', 25812.25), 25836.5);
+    eq(calc.expandPrice('05', 25812.25), 25805);
+    eq(calc.expandPrice('003', 25998), 26003, 'crosses a round number');
+    eq(calc.expandPrice('990', 26004), 25990, 'crosses back down');
+    eq(calc.expandPrice('25836.5', 25812.25), 25836.5, 'full price untouched');
+    eq(calc.expandPrice('836,5', 25812.25), 25836.5, 'decimal comma');
+    eq(calc.expandPrice('836.5', null), 836.5, 'no reference');
+    eq(calc.expandPrice('', 25812.25), null);
+  }],
+  ['snap to tick', () => {
+    eq(calc.snapToTick(25812.3, 0.25), 25812.25);
+    eq(calc.snapToTick(25812.13, 0.25), 25812.25);
+    eq(calc.snapToTick(25812.12, 0.25), 25812);
+  }],
+  ['stop/target from points', () => {
+    eq(calc.priceFromPoints(25812.25, 8.25, 'long', 'stop'), 25804);
+    eq(calc.priceFromPoints(25812.25, 20, 'long', 'target'), 25832.25);
+    eq(calc.priceFromPoints(25850, 10, 'short', 'stop'), 25860);
+    eq(calc.priceFromPoints(25850, 10, 'short', 'target'), 25840);
+    eq(calc.pointsFromPrice(25812.25, 25804), 8.25);
+  }],
+  ['P&L by hour and weekday', () => {
+    const list = [
+      net(20, { dateTime: new Date(2026, 9, 19, 9, 35).toISOString() }),  // Mon
+      net(-10, { dateTime: new Date(2026, 9, 19, 9, 50).toISOString() }), // Mon
+      net(30, { dateTime: new Date(2026, 9, 21, 13, 5).toISOString() }),  // Wed
+    ].map((t) => ({ ...t, m: calc.tradeMetrics(t, MNQ) }));
+    const h = calc.pnlByHour(list);
+    eq(h.map((r) => r.key).join(), '9,13');
+    eq(h[0].net, 10); eq(h[0].count, 2); eq(h[0].winRate, 0.5);
+    const w = calc.pnlByWeekday(list);
+    eq(w.map((r) => r.key).join(), '1,3');
+    eq(w[1].net, 30);
+  }],
+  ['account rules: daily loss limit and trailing EOD drawdown', () => {
+    const mk = (day, n, hh = 10) => {
+      const t = net(n, { dateTime: new Date(2026, 9, day, hh).toISOString() });
+      return { ...t, m: calc.tradeMetrics(t, MNQ) };
+    };
+    const now = new Date(2026, 9, 23, 12);
+    const list = [mk(20, 400), mk(21, -150), mk(22, 300), mk(23, -100), mk(23, -80, 11)];
+    const r = calc.accountRules(list, { dailyLossLimit: 500, maxDrawdown: 1000 }, now);
+    eq(r.daily.net, -180); eq(r.daily.used, 180); eq(r.daily.left, 320); eq(r.daily.breached, false);
+    // EOD highs: 400, 250, 550 → high 550 (today's close not counted yet). Balance 370.
+    eq(r.drawdown.highEod, 550); eq(r.drawdown.floor, -450); eq(r.drawdown.balance, 370); eq(r.drawdown.left, 820);
+    const since = calc.accountRules(list, { maxDrawdown: 1000, since: '2026-10-22' }, now);
+    eq(since.drawdown.balance, 120); eq(since.drawdown.highEod, 300);
+    eq(calc.accountRules(list, {}, now).daily, null);
+    eq(calc.accountRules([mk(23, -600)], { dailyLossLimit: 500 }, now).daily.breached, true);
+  }],
   ['round2 never returns -0', () => {
     eq(Object.is(calc.round2(-0.001), -0), false);
     eq(calc.round2(1.005 + 0.0000001), 1.01);

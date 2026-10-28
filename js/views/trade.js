@@ -1,15 +1,26 @@
 // Log / edit trade — full-screen form shown over the tabs.
+//
+// Speed-ups: a new trade starts from the last trade's contracts and entry
+// reason; prices can be typed as their last digits (836.5 → 25836.50) and
+// snap to the tick; stop and target can be typed in points. Drag the header
+// down (or swipe in from the left edge) to cancel.
 
 import * as store from '../store.js';
-import { tradeMetrics, findInstrument, feesFor, isOnTick, hasNum, dayKey } from '../calc.js';
+import {
+  tradeMetrics, findInstrument, feesFor, hasNum, dayKey, expandPrice, snapToTick, priceFromPoints, pointsFromPrice,
+} from '../calc.js';
 import {
   money, moneyPlain, signed, rMult, tone, price, dayLabel, time, toLocalInput, fromLocalInput, fromDayKey, esc,
 } from '../format.js';
 import { icons, toast, confirmSheet, promptSheet } from '../ui.js';
 import { compressImage } from '../image.js';
+import { drag } from '../gestures.js';
+import { openViewer } from '../viewer.js';
 import { detailsFor, allDetails } from '../defaults.js';
 
 const PRICE_FIELDS = ['entry', 'exit', 'stop', 'target'];
+const OFFSET_FIELDS = ['stop', 'target']; // can be typed as points from entry
+const COPY_FIELDS = ['instrument', 'side', 'contracts', 'entry', 'exit', 'stop', 'target', 'setup', 'mistakes', 'grade'];
 let objectUrls = [];
 
 /** Free image memory when the form closes. */
@@ -23,18 +34,26 @@ function toNum(s) {
   return v === '' ? null : Number(v);
 }
 
-function newTrade(settings, params) {
+/**
+ * A blank trade. `last` (the most recent trade) supplies contracts and entry
+ * reason; `copy` (Duplicate) supplies everything but notes
+ * and screenshots, and keeps its time unless params has now=1.
+ */
+function newTrade(settings, params, last, copy) {
   const enabled = settings.instruments.filter((i) => i.enabled);
-  const inst = enabled.find((i) => i.symbol === settings.defaultInstrument) || enabled[0] || settings.instruments[0];
+  const from = copy || last;
+  const inst = (from && enabled.find((i) => i.symbol === from.instrument))
+    || enabled.find((i) => i.symbol === settings.defaultInstrument) || enabled[0] || settings.instruments[0];
   let when = new Date();
   const day = params.get('day');
-  if (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day !== dayKey(when)) {
+  if (copy && params.get('now') !== '1') when = new Date(copy.dateTime);
+  else if (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day !== dayKey(when)) {
     const d = fromDayKey(day);
     d.setHours(when.getHours(), when.getMinutes());
     when = d;
   }
   when.setSeconds(0, 0);
-  return {
+  const t = {
     instrument: inst.symbol,
     dateTime: when.toISOString(),
     side: 'long',
@@ -45,13 +64,26 @@ function newTrade(settings, params) {
     grade: '',
     notes: '',
     screenshotIds: [],
-    fees: feesFor(settings, inst.symbol, 1),
   };
+  if (copy) {
+    for (const k of COPY_FIELDS) if (copy[k] !== undefined) t[k] = structuredClone(copy[k]);
+  } else if (last) {
+    t.contracts = last.contracts || 1;
+    t.setup = last.setup || '';
+  }
+  // Details (trend, pullback, depth) are copied on Duplicate only: they differ trade to trade.
+  if (copy && t.setup) for (const g of detailsFor(settings, t.setup)) if (copy[g.key]) t[g.key] = copy[g.key];
+  t.instrument = inst.symbol;
+  t.fees = feesFor(settings, inst.symbol, t.contracts);
+  return t;
 }
 
 export async function render(el, { id, params, settings, close }) {
   teardown();
   const existing = id ? await store.getTrade(id) : null;
+  const copyId = !id && params.get('copy');
+  const copy = copyId ? await store.getTrade(copyId) : null;
+  const [last] = existing ? [] : await store.listTrades();
   if (id && !existing) {
     el.innerHTML = `<div class="form-view"><div class="form-head"><button class="link-btn" data-cancel>Back</button><h1>Trade</h1><span></span></div>
       <div class="empty"><strong>Trade not found</strong>It may have been deleted.</div></div>`;
@@ -59,9 +91,14 @@ export async function render(el, { id, params, settings, close }) {
     return;
   }
 
-  const t = existing ? structuredClone(existing) : newTrade(settings, params);
+  const t = existing ? structuredClone(existing) : newTrade(settings, params, last, copy);
+  // Reference for shorthand prices: the entry, or the last trade's exit for the entry itself.
+  const lastPrice = last && (hasNum(last.exit) ? Number(last.exit) : hasNum(last.entry) ? Number(last.entry) : null);
+  let unit = settings.stopUnit === 'points' ? 'points' : 'price';
   // Price inputs are edited as text so "25812." doesn't get mangled mid-typing.
-  const text = Object.fromEntries(PRICE_FIELDS.map((f) => [f, hasNum(t[f]) ? String(t[f]) : '']));
+  const tick0 = (findInstrument(settings, t.instrument) || {}).tickSize || 0.25;
+  const text = Object.fromEntries(PRICE_FIELDS.map((f) => [f, hasNum(t[f]) ? price(t[f], tick0) : '']));
+  if (unit === 'points') for (const f of OFFSET_FIELDS) text[f] = hasNum(t[f]) ? String(pointsFromPrice(t.entry, t[f]) ?? '') : '';
   let feesText = Number(t.fees ?? 0).toFixed(2);
   let feesManual = existing ? Number(existing.fees) !== feesFor(settings, existing.instrument, existing.contracts) : false;
   const shots = (t.screenshotIds || []).map((sid) => ({ id: sid, url: null }));
@@ -81,7 +118,7 @@ export async function render(el, { id, params, settings, close }) {
     <div class="form-view">
       <header class="form-head">
         <button class="link-btn" data-cancel>Cancel</button>
-        <h1>${existing ? 'Edit trade' : 'New trade'}</h1>
+        <h1>${existing ? 'Edit trade' : copy ? 'Copy of trade' : 'New trade'}</h1>
         <button class="link-btn" data-save>Save</button>
       </header>
 
@@ -99,6 +136,13 @@ export async function render(el, { id, params, settings, close }) {
           <span class="inst-change">Change</span>
           <input class="overlay-input" type="datetime-local" data-date aria-label="Trade date and time" value="${toLocalInput(t.dateTime)}">
         </div>
+        <div class="time-row" role="group" aria-label="Adjust time">
+          <button type="button" class="mini-chip" data-time="now">Now</button>
+          <button type="button" class="mini-chip num" data-time="-15">−15m</button>
+          <button type="button" class="mini-chip num" data-time="-5">−5m</button>
+          <button type="button" class="mini-chip num" data-time="-1">−1m</button>
+          <button type="button" class="mini-chip num" data-time="5">+5m</button>
+        </div>
       </div>
 
       <div class="segmented form-block" role="group" aria-label="Side" data-side>
@@ -115,11 +159,20 @@ export async function render(el, { id, params, settings, close }) {
         </div>
       </div>
 
-      <div class="grid2 form-block">
+      <div class="grid2 form-block prices">
         ${PRICE_FIELDS.map((f) => `
+          ${f === 'stop' ? `
+          <div class="unit-row">
+            <span>Stop &amp; target in</span>
+            <div class="segmented mini" role="group" aria-label="Stop and target unit" data-unit>
+              <button type="button" data-v="price">Price</button>
+              <button type="button" data-v="points">Points</button>
+            </div>
+          </div>` : ''}
           <label class="field">
-            <span class="field-label">${f[0].toUpperCase() + f.slice(1)}${f === 'stop' || f === 'target' ? ' <small>(optional)</small>' : ''}</span>
+            <span class="field-label">${f[0].toUpperCase() + f.slice(1)}<span data-unit-label="${f}"></span>${OFFSET_FIELDS.includes(f) ? ' <small>(optional)</small>' : ''}</span>
             <input class="input num" data-price="${f}" inputmode="decimal" autocomplete="off" enterkeyhint="next" value="${esc(text[f])}">
+            <p class="field-hint" data-hint="${f}"></p>
             <p class="field-error" data-error="${f}"></p>
           </label>`).join('')}
       </div>
@@ -199,11 +252,55 @@ export async function render(el, { id, params, settings, close }) {
     $('[data-fees-reset]').hidden = !feesManual;
   }
 
+  /** Number typed in a field, with shorthand digits filled in from the reference. */
+  function typed(f) {
+    const raw = String(text[f] ?? '').trim();
+    if (raw === '') return null;
+    if (unit === 'points' && OFFSET_FIELDS.includes(f)) return toNum(raw);
+    const ref = f === 'entry' ? lastPrice : (typedEntry() ?? lastPrice);
+    return expandPrice(raw, ref);
+  }
+  function typedEntry() {
+    const raw = String(text.entry ?? '').trim();
+    return raw === '' ? null : expandPrice(raw, lastPrice);
+  }
+  /** Field value as a price (points converted using entry and side). */
+  function priceOf(f) {
+    const v = typed(f);
+    if (v === null) return null;
+    if (unit === 'points' && OFFSET_FIELDS.includes(f)) return priceFromPoints(typedEntry(), v, t.side, f);
+    return v;
+  }
+
   function current() {
     const out = { ...t };
-    for (const f of PRICE_FIELDS) out[f] = toNum(text[f]);
+    for (const f of PRICE_FIELDS) out[f] = priceOf(f);
     out.fees = toNum(feesText) ?? 0;
     return out;
+  }
+
+  function drawUnit() {
+    drawPressed($('[data-unit]'), (v) => v === unit);
+    for (const f of OFFSET_FIELDS) {
+      $(`[data-unit-label="${f}"]`).textContent = unit === 'points' ? ' (pts)' : '';
+      $(`[data-price="${f}"]`).placeholder = unit === 'points' ? 'e.g. 8.25' : '';
+    }
+    drawHints();
+  }
+
+  /** Under stop/target in points mode: the price it works out to. */
+  function drawHints() {
+    for (const f of PRICE_FIELDS) {
+      let hint = '';
+      if (unit === 'points' && OFFSET_FIELDS.includes(f) && text[f].trim()) {
+        const p = priceOf(f);
+        hint = hasNum(p) ? `= ${price(snapToTick(p, inst().tickSize), inst().tickSize)}` : 'Enter the entry first';
+      }
+      $(`[data-hint="${f}"]`).textContent = hint;
+    }
+    const entryInput = $('[data-price="entry"]');
+    entryInput.placeholder = lastPrice ? price(lastPrice, inst().tickSize) : '';
+    $('[data-price="exit"]').placeholder = hasNum(typedEntry()) ? 'Last digits OK' : '';
   }
 
   function drawResult() {
@@ -237,23 +334,32 @@ export async function render(el, { id, params, settings, close }) {
 
   function validateField(f) {
     const raw = text[f].trim();
-    const v = toNum(raw);
-    const tick = inst().tickSize;
+    const v = typed(f);
+    const pointsMode = unit === 'points' && OFFSET_FIELDS.includes(f);
     let msg = '';
     if (raw === '') msg = (f === 'entry' || f === 'exit') ? 'Required' : '';
-    else if (!Number.isFinite(v) || v <= 0) msg = 'Enter a price';
-    else if (!isOnTick(v, tick)) msg = `Not on a ${tick} tick`;
+    else if (!Number.isFinite(v) || v <= 0) msg = pointsMode ? 'Enter points' : 'Enter a price';
+    else if (pointsMode && !hasNum(typedEntry())) msg = 'Enter the entry first';
     errors[f] = msg;
     $(`[data-error="${f}"]`).textContent = msg;
     $(`[data-price="${f}"]`).classList.toggle('invalid', !!msg);
     return !msg;
   }
 
+  /** Fill in shorthand digits and snap to the tick, in place. */
+  function normalize(f) {
+    if (!text[f].trim() || !validateField(f)) return;
+    const tick = inst().tickSize;
+    const v = snapToTick(typed(f), tick);
+    const input = $(`[data-price="${f}"]`);
+    input.value = text[f] = unit === 'points' && OFFSET_FIELDS.includes(f) ? String(v) : price(v, tick);
+  }
+
   function drawShots() {
     $('[data-shots]').innerHTML = shots.map((s, i) => `
       <div class="shot">
         ${s.url ? `<img src="${s.url}" alt="Chart screenshot ${i + 1}">` : ''}
-        <button type="button" class="shot-open" data-open="${i}" aria-label="View screenshot ${i + 1}"></button>
+        <button type="button" class="shot-open" data-open="${i}" aria-label="View screenshot ${i + 1} full screen"></button>
         <button type="button" class="shot-remove" data-remove="${i}" aria-label="Remove screenshot ${i + 1}"><span>${icons.close}</span></button>
       </div>`).join('');
   }
@@ -268,6 +374,7 @@ export async function render(el, { id, params, settings, close }) {
   }
 
   drawInstrument();
+  drawUnit();
   drawPressed($('[data-side]'), (v) => v === t.side);
   $('[data-contracts]').textContent = t.contracts;
   drawPressed($('[data-grade]'), (v) => v === t.grade);
@@ -283,7 +390,8 @@ export async function render(el, { id, params, settings, close }) {
   $('[data-inst]').onchange = (e) => {
     t.instrument = e.target.value;
     drawInstrument();
-    PRICE_FIELDS.forEach((f) => { if (text[f] || errors[f]) validateField(f); });
+    PRICE_FIELDS.forEach((f) => { if (text[f] || errors[f]) normalize(f); });
+    drawHints();
     drawResult();
   };
   $('[data-date]').onchange = (e) => {
@@ -295,13 +403,16 @@ export async function render(el, { id, params, settings, close }) {
     input.oninput = () => {
       text[f] = input.value;
       if (errors[f]) validateField(f);
+      drawHints();
       drawResult();
     };
     input.onblur = () => {
       if (!text[f].trim()) { if (f !== 'entry' && f !== 'exit') validateField(f); return; }
-      if (validateField(f)) {
-        input.value = text[f] = price(toNum(text[f]), inst().tickSize);
-      }
+      normalize(f);
+      // A new entry changes what shorthand in the other fields means.
+      if (f === 'entry') PRICE_FIELDS.forEach((o) => { if (o !== 'entry' && errors[o]) validateField(o); });
+      drawHints();
+      drawResult();
     };
   });
   $('[data-fees]').oninput = (e) => {
@@ -345,7 +456,19 @@ export async function render(el, { id, params, settings, close }) {
     if (side) {
       t.side = side.dataset.v;
       drawPressed($('[data-side]'), (v) => v === t.side);
+      drawHints();
       drawResult();
+      return;
+    }
+    const unitBtn = target.closest('[data-unit] [data-v]');
+    if (unitBtn) { await setUnit(unitBtn.dataset.v); return; }
+    const timeBtn = target.closest('[data-time]');
+    if (timeBtn) {
+      const d = timeBtn.dataset.time === 'now' ? new Date() : new Date(new Date(t.dateTime).getTime() + Number(timeBtn.dataset.time) * 60000);
+      d.setSeconds(0, 0);
+      t.dateTime = d.toISOString();
+      $('[data-date]').value = toLocalInput(t.dateTime);
+      drawInstrument();
       return;
     }
     const step = target.closest('[data-step]');
@@ -404,6 +527,26 @@ export async function render(el, { id, params, settings, close }) {
     if (target.closest('[data-delete]')) await remove_();
   };
 
+  /** Switch stop/target between price and points, converting what's typed. */
+  async function setUnit(next) {
+    if (next === unit) return;
+    const prices = Object.fromEntries(OFFSET_FIELDS.map((f) => [f, priceOf(f)]));
+    const entry = typedEntry();
+    unit = next;
+    for (const f of OFFSET_FIELDS) {
+      if (!text[f].trim()) continue;
+      const p = prices[f];
+      if (!hasNum(p)) continue;
+      text[f] = unit === 'points' ? String(pointsFromPrice(entry, p) ?? '') : price(snapToTick(p, inst().tickSize), inst().tickSize);
+      $(`[data-price="${f}"]`).value = text[f];
+      if (errors[f]) validateField(f);
+    }
+    drawUnit();
+    drawResult();
+    settings.stopUnit = unit;
+    await store.saveSettings(settings);
+  }
+
   async function addTag(kind) {
     const listKey = kind === 'setup' ? 'setups' : 'mistakes';
     const name = await promptSheet({
@@ -421,16 +564,14 @@ export async function render(el, { id, params, settings, close }) {
   }
 
   function viewShot(s) {
+    const urls = shots.map((x) => x.url).filter(Boolean);
     if (!s || !s.url) return;
-    const v = document.createElement('div');
-    v.className = 'viewer';
-    v.innerHTML = `<img src="${s.url}" alt="Chart screenshot"><button class="icon-btn" aria-label="Close">${icons.close}</button>`;
-    v.onclick = () => v.remove();
-    document.body.appendChild(v);
+    openViewer(urls, urls.indexOf(s.url));
   }
 
   async function save() {
     if (saving) return;
+    PRICE_FIELDS.forEach(normalize);
     const ok = PRICE_FIELDS.map(validateField).every(Boolean);
     const fees = toNum(feesText);
     if (!(fees === null || (Number.isFinite(fees) && fees >= 0))) {
@@ -449,6 +590,7 @@ export async function render(el, { id, params, settings, close }) {
       for (const s of shots) ids.push(s.id || await store.saveScreenshot(s.blob));
       for (const sid of removedShots) await store.deleteScreenshot(sid);
       const record = { ...current(), screenshotIds: ids };
+      for (const f of PRICE_FIELDS) if (hasNum(record[f])) record[f] = snapToTick(record[f], inst().tickSize);
       // Keep only the details that belong to the chosen setup.
       const keep = new Set(detailsFor(settings, record.setup).map((g) => g.key));
       for (const g of allDetails(settings)) if (!keep.has(g.key) || !record[g.key]) delete record[g.key];
@@ -471,15 +613,45 @@ export async function render(el, { id, params, settings, close }) {
   }
 
   async function remove_() {
-    const yes = await confirmSheet({
-      title: 'Delete this trade?',
-      message: `${t.side === 'short' ? 'Short' : 'Long'} ${t.contracts} ${t.instrument} on ${dayLabel(t.dateTime)} at ${time(t.dateTime)}. This can’t be undone.`,
-      confirmLabel: 'Delete trade',
-      danger: true,
-    });
-    if (!yes) return;
-    await store.deleteTrade(existing.id);
-    toast('Trade deleted');
+    const removed = await store.deleteTrade(existing.id);
     close();
+    toast('Trade deleted', {
+      action: 'Undo',
+      onAction: async () => {
+        await store.restoreTrade(removed);
+        toast('Trade restored');
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      },
+    });
   }
+
+  // ------------------------------------------------------------ gestures
+
+  // Drag the header down, or swipe in from the left edge, to cancel.
+  const view = $('.form-view');
+  const springBack = () => { el.style.transition = ''; el.style.transform = ''; };
+  const dismiss = async (out) => {
+    el.style.transition = '';
+    el.style.transform = out;
+    const before = snapshot() !== initial;
+    if (before) springBack();
+    await cancel();
+  };
+  drag($('.form-head'), {
+    axis: 'y',
+    move(dx, dy) { el.style.transition = 'none'; el.style.transform = `translateY(${Math.max(0, dy)}px)`; },
+    end({ dy, vy, cancelled }) {
+      if (!cancelled && (dy > 120 || (vy > 0.5 && dy > 40))) dismiss('translateY(100%)');
+      else springBack();
+    },
+  });
+  drag(view, {
+    axis: 'x',
+    shouldStart: (e) => e.clientX < 28,
+    move(dx) { el.style.transition = 'none'; el.style.transform = `translateX(${Math.max(0, dx)}px)`; },
+    end({ dx, vx, cancelled }) {
+      if (!cancelled && (dx > el.clientWidth * 0.35 || (vx > 0.5 && dx > 40))) dismiss('translateX(100%)');
+      else springBack();
+    },
+  });
 }

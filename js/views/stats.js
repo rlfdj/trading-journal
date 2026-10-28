@@ -1,15 +1,24 @@
-// Stats: period switcher, equity curve, stat tiles, P&L by setup, cost of mistakes.
+// Stats: period switcher, equity curve, stat tiles, P&L by setup, by time of
+// day and weekday, cost of mistakes. Swipe sideways to change period; drag
+// along the curve to read the balance on any day.
 
 import * as store from '../store.js';
 import {
   enrich, inPeriod, summarize, equityCurve, maxDrawdown, bestWorstDay, pnlBySetup, costOfMistakes, dailyPnl, pnlByField,
+  pnlByHour, pnlByWeekday, accountRules,
 } from '../calc.js';
+import { pageSwipe, slideIn } from '../gestures.js';
+import { rulesHtml } from './rules.js';
 import { detailsFor } from '../defaults.js';
 import { money, pct, ratio, tone, shortDate, monthShort, fromDayKey, esc } from '../format.js';
 
 const PERIODS = [['week', 'Week'], ['month', 'Month'], ['3m', '3M'], ['all', 'All']];
 let period = 'month';
+let slideDir = 0;
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const hourLabel = (h) => `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00`;
 
+const winOf = (r) => (r.winRate === null ? '' : ` · ${pct(r.winRate)} win`);
 const dollars = (x) => `$${Math.round(Math.abs(x)).toLocaleString('en-US')}`;
 
 function rangeLabel(days) {
@@ -23,6 +32,8 @@ function rangeLabel(days) {
   const yr = a.getFullYear() !== b.getFullYear();
   return `${shortDate(days[0].day)}${yr ? ` ’${String(a.getFullYear()).slice(2)}` : ''} – ${shortDate(days[days.length - 1].day)}${yr ? ` ’${String(b.getFullYear()).slice(2)}` : ''}`;
 }
+
+let geometry = null; // last drawn curve, for scrubbing
 
 /** Equity curve as inline SVG sized to the card. */
 function curveSvg(curve, width) {
@@ -38,6 +49,7 @@ function curveSvg(curve, width) {
   const zero = y(0).toFixed(1);
   const area = `${line} L${x(pts.length - 1).toFixed(1)},${zero} L${x(0).toFixed(1)},${zero} Z`;
   const last = pts[pts.length - 1];
+  geometry = { pts, x, y, width };
   const color = last.equity >= 0 ? 'var(--pos)' : 'var(--neg)';
   const tint = last.equity >= 0 ? 'var(--pos-tint)' : 'var(--neg-tint)';
   return `
@@ -47,6 +59,10 @@ function curveSvg(curve, width) {
       <line x1="${padX}" x2="${width - padX}" y1="${zero}" y2="${zero}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4" opacity="0.6"/>
       <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
       <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.equity).toFixed(1)}" r="3.6" fill="${color}"/>
+      <g data-cursor style="display:none">
+        <line y1="0" y2="${H}" stroke="var(--ink)" stroke-width="1" opacity="0.35"/>
+        <circle r="5" fill="var(--card)" stroke="var(--ink)" stroke-width="2"/>
+      </g>
     </svg>`;
 }
 
@@ -67,6 +83,9 @@ export async function render(el, { settings, refresh }) {
   const all = enrich(await store.listTrades(), settings);
   const list = inPeriod(all, period);
   const s = summarize(list);
+  const rules = accountRules(all, { maxDrawdown: settings.drawdownLimit, since: settings.accountStart });
+  const hours = pnlByHour(list);
+  const weekdays = pnlByWeekday(list);
   const days = dailyPnl(list);
   const curve = equityCurve(list);
   const dd = maxDrawdown(list);
@@ -88,9 +107,14 @@ export async function render(el, { settings, refresh }) {
     <div class="segmented" role="group" aria-label="Period">
       ${PERIODS.map(([k, label]) => `<button type="button" data-period="${k}" aria-pressed="${period === k}">${label}</button>`).join('')}
     </div>
+    <div class="swipe-area" data-swipe><div class="swipe-content" data-swipe-content>
+    ${rules.drawdown ? rulesHtml({ drawdown: rules.drawdown }, 'form-block') : ''}
     ${!list.length ? `
-      <div class="card form-block"><div class="empty"><strong>No trades in this period</strong>Stats appear once you log trades.</div></div>` : `
+      <div class="card form-block"><div class="empty"><strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
+        ${all.length ? 'Swipe or pick a longer period.' : 'Stats appear once you log trades.'}
+        ${all.length ? '' : '<a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a>'}</div></div>` : `
     <section class="card equity-card form-block">
+      <div class="curve-tip" data-tip hidden></div>
       <div class="equity-head">
         <div>
           <div class="label">Net P&amp;L · ${rangeLabel(days)}</div>
@@ -131,12 +155,23 @@ export async function render(el, { settings, refresh }) {
       ${barsHtml(setups, (r) => r.setup, (r) => r.net, (r) => r.count)}
     </section>
 
+    <section class="card card-pad">
+      <h2 class="bars-title">By time of day</h2>
+      ${barsHtml(hours, (r) => hourLabel(r.key), (r) => r.net, (r) => r.count, winOf)}
+      <p class="note">Hour the trade was entered, in this phone’s time zone.</p>
+    </section>
+
+    <section class="card card-pad">
+      <h2 class="bars-title">By weekday</h2>
+      ${barsHtml(weekdays, (r) => DOW[r.key], (r) => r.net, (r) => r.count, winOf)}
+    </section>
+
     ${breakdowns.map((b) => `
     <section class="card card-pad">
       <h2 class="bars-title"><span>${esc(b.setup)}</span><span class="num ${tone(summarize(b.trades).net)}">${money(summarize(b.trades).net)}</span></h2>
       ${b.groups.map(({ g, rows }) => `
         <p class="detail-label">${esc(g.label)}</p>
-        ${barsHtml(rows, (r) => r.value, (r) => r.net, (r) => r.count, (r) => (r.winRate === null ? '' : ` · ${pct(r.winRate)} win`))}`).join('')}
+        ${barsHtml(rows, (r) => r.value, (r) => r.net, (r) => r.count, winOf)}`).join('')}
     </section>`).join('')}
 
     <section class="card card-pad">
@@ -145,13 +180,67 @@ export async function render(el, { settings, refresh }) {
         ? barsHtml(mistakes, (r) => r.mistake, (r) => r.cost, (r) => r.count)
         : '<p class="muted" style="margin:0">No losing trades tagged with a mistake in this period.</p>'}
       ${mistakes.length ? '<p class="note">Sum of net P&amp;L of losing trades tagged with each mistake. A trade with two mistakes counts toward both.</p>' : ''}
-    </section>`}`;
+    </section>`}
+    </div></div>`;
 
   const curveEl = el.querySelector('[data-curve]');
-  if (curveEl) curveEl.innerHTML = curveSvg(curve, Math.max(200, Math.round(curveEl.clientWidth)));
+  if (curveEl) {
+    curveEl.innerHTML = curveSvg(curve, Math.max(200, Math.round(curveEl.clientWidth)));
+    scrubber(curveEl, el.querySelector('[data-tip]'));
+  }
+
+  const keys = PERIODS.map(([k]) => k);
+  const setPeriod = (k) => {
+    if (!k || k === period) return;
+    slideDir = keys.indexOf(k) > keys.indexOf(period) ? 1 : -1;
+    period = k;
+    refresh();
+  };
+  const content = el.querySelector('[data-swipe-content]');
+  slideIn(content, slideDir);
+  slideDir = 0;
+  pageSwipe(el.querySelector('[data-swipe]'), content, {
+    canGo: (dir) => !!keys[keys.indexOf(period) + dir],
+    onSwipe: (dir) => setPeriod(keys[keys.indexOf(period) + dir]),
+    shouldStart: (e) => !e.target.closest('[data-curve]'),
+  });
 
   el.onclick = (e) => {
     const b = e.target.closest('[data-period]');
-    if (b && b.dataset.period !== period) { period = b.dataset.period; refresh(); }
+    if (b) setPeriod(b.dataset.period);
   };
+}
+
+/** Touch or hover the curve to see the balance at that day. */
+function scrubber(curveEl, tip) {
+  const svg = curveEl.querySelector('svg');
+  const cursor = svg.querySelector('[data-cursor]');
+  const line = cursor.querySelector('line');
+  const dot = cursor.querySelector('circle');
+  const g = geometry;
+  const show = (e) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((e.clientX - rect.left) / rect.width) * g.width;
+    let i = 0;
+    for (let k = 1; k < g.pts.length; k++) if (Math.abs(g.x(k) - px) < Math.abs(g.x(i) - px)) i = k;
+    const p = g.pts[i];
+    cursor.style.display = '';
+    line.setAttribute('x1', g.x(i));
+    line.setAttribute('x2', g.x(i));
+    dot.setAttribute('cx', g.x(i));
+    dot.setAttribute('cy', g.y(p.equity));
+    const dayNet = p.equity - (i > 0 ? g.pts[i - 1].equity : 0);
+    tip.hidden = false;
+    tip.innerHTML = p.day
+      ? `<b class="num ${tone(p.equity)}">${money(p.equity)}</b><span>${shortDate(p.day)} · day <span class="num ${tone(dayNet)}">${money(dayNet)}</span></span>`
+      : '<b class="num">$0.00</b><span>Start</span>';
+    const left = (g.x(i) / g.width) * rect.width;
+    tip.style.left = `${Math.min(Math.max(left, 80), rect.width - 80) + (rect.left - curveEl.parentElement.getBoundingClientRect().left)}px`;
+  };
+  const hide = () => { cursor.style.display = 'none'; tip.hidden = true; };
+  curveEl.addEventListener('pointerdown', show);
+  curveEl.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' || e.buttons) show(e); });
+  curveEl.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') hide(); });
+  curveEl.addEventListener('pointercancel', hide);
+  curveEl.addEventListener('pointerleave', hide);
 }

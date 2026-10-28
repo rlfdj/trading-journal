@@ -6,6 +6,7 @@
 
 import * as store from './store.js';
 import { icons, toast } from './ui.js';
+import { longPress } from './gestures.js';
 import { initPwa } from './pwa.js';
 import * as journal from './views/journal.js';
 import * as calendar from './views/calendar.js';
@@ -25,6 +26,14 @@ let routedInApp = false;    // true once we've handled a hash change in this ses
 let renderToken = 0;
 
 document.querySelectorAll('[data-icon]').forEach((el) => { el.outerHTML = icons[el.dataset.icon]; });
+
+// Long-press + to start from a copy of the most recent trade, timed now.
+longPress(document.querySelector('.tab-plus'), async () => {
+  const [latest] = await store.listTrades();
+  if (!latest) { go('#/trade/new'); return; }
+  toast('Copy of your last trade');
+  go(`#/trade/new?copy=${encodeURIComponent(latest.id)}&now=1`);
+});
 
 function parseHash() {
   const raw = location.hash.replace(/^#\/?/, '');
@@ -48,12 +57,20 @@ async function renderTab(tab, params) {
   await views[tab].render(viewEl, { settings, params, go, refresh: () => renderTab(tab, params) });
 }
 
+let leaveTimer = null;
+
 async function openOverlay(id, params) {
   if (!overlayOpen) {
+    clearTimeout(leaveTimer);
     savedScroll = window.scrollY;
     overlayOpen = true;
     overlayEl.hidden = false;
+    overlayEl.classList.remove('leaving');
+    overlayEl.style.transform = '';
+    overlayEl.style.transition = '';
     overlayEl.scrollTop = 0;
+    overlayEl.classList.add('entering');
+    overlayEl.addEventListener('animationend', () => overlayEl.classList.remove('entering'), { once: true });
     document.body.classList.add('locked');
   }
   const settings = await store.getSettings();
@@ -63,10 +80,20 @@ async function openOverlay(id, params) {
 function closeOverlay() {
   if (!overlayOpen) return false;
   overlayOpen = false;
-  tradeForm.teardown();
-  overlayEl.hidden = true;
-  overlayEl.innerHTML = '';
   document.body.classList.remove('locked');
+  // Slide away (unless a drag already moved it off screen), then clear.
+  overlayEl.classList.remove('entering');
+  if (!overlayEl.style.transform) overlayEl.classList.add('leaving');
+  else overlayEl.style.transition = 'transform 0.2s ease-in';
+  const done = () => {
+    tradeForm.teardown();
+    overlayEl.hidden = true;
+    overlayEl.innerHTML = '';
+    overlayEl.classList.remove('leaving');
+    overlayEl.style.transform = '';
+    overlayEl.style.transition = '';
+  };
+  leaveTimer = setTimeout(done, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200);
   return true;
 }
 
@@ -88,8 +115,14 @@ async function route() {
   const tab = views[parts[0]] ? parts[0] : 'journal';
   const wasOverlay = closeOverlay();
   const sameTab = tab === currentTab;
+  const switched = currentTab && !sameTab;
   currentTab = tab;
   await renderTab(tab, params);
+  if (switched) {
+    viewEl.classList.remove('view-enter');
+    void viewEl.offsetWidth; // restart the animation
+    viewEl.classList.add('view-enter');
+  }
   if (wasOverlay && sameTab) window.scrollTo(0, savedScroll);
   else if (!params.get('day')) window.scrollTo(0, 0);
 }

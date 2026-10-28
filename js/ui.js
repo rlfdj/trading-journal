@@ -1,6 +1,7 @@
 // ui.js — small shared UI pieces: icons, toast, bottom sheets.
 
 import { esc } from './format.js';
+import { drag } from './gestures.js';
 
 const svg = (body, size = 22) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -16,13 +17,19 @@ export const icons = {
   left: svg('<path d="M15 5l-7 7 7 7"/>', 20),
   right: svg('<path d="M9 5l7 7-7 7"/>', 20),
   close: svg('<path d="M6 6l12 12M18 6L6 18"/>', 18),
+  copy: svg('<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/>', 20),
+  trash: svg('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>', 20),
   camera: svg('<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.4-2h5l1.4 2h1.6A2.5 2.5 0 0 1 20 8.5v8a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.5"/>', 20),
 };
 
 // -------------------------------------------------------------------- toast
 
 let toastTimer;
-export function toast(message) {
+/**
+ * Show a short message above the tab bar. With { action, onAction } it gets a
+ * button (e.g. Undo) and stays up longer.
+ */
+export function toast(message, { action, onAction, duration } = {}) {
   let el = document.getElementById('toast');
   if (!el) {
     el = document.createElement('div');
@@ -31,10 +38,15 @@ export function toast(message) {
     el.setAttribute('role', 'status');
     document.body.appendChild(el);
   }
-  el.textContent = message;
+  el.innerHTML = `<span>${esc(message)}</span>${action ? `<button type="button">${esc(action)}</button>` : ''}`;
+  el.classList.toggle('has-action', !!action);
+  const hide = () => { el.classList.remove('show'); };
+  if (action) {
+    el.querySelector('button').onclick = () => { clearTimeout(toastTimer); hide(); onAction(); };
+  }
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+  toastTimer = setTimeout(hide, duration || (action ? 5000 : 2600));
 }
 
 // ------------------------------------------------------------------- sheets
@@ -50,8 +62,8 @@ export function sheet(title, render) {
     wrap.innerHTML = `
       <div class="sheet-backdrop"></div>
       <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-        <div class="sheet-grip"></div>
-        <h2 class="sheet-title">${esc(title)}</h2>
+        <div class="sheet-handle"><div class="sheet-grip"></div>
+        <h2 class="sheet-title">${esc(title)}</h2></div>
         <div class="sheet-body"></div>
       </div>`;
     document.body.appendChild(wrap);
@@ -65,6 +77,21 @@ export function sheet(title, render) {
       resolve(value);
     };
     wrap.querySelector('.sheet-backdrop').addEventListener('click', () => close(null));
+    // Drag the top of the sheet (grip and title) down to dismiss it.
+    const panel = wrap.querySelector('.sheet');
+    const handle = wrap.querySelector('.sheet-handle');
+    drag(handle, {
+      axis: 'y',
+      move(dx, dy) {
+        panel.style.transition = 'none';
+        panel.style.transform = `translateY(${Math.max(0, dy)}px)`;
+      },
+      end({ dy, vy, cancelled }) {
+        panel.style.transition = '';
+        if (!cancelled && (dy > 110 || (vy > 0.5 && dy > 30))) { panel.style.transform = 'translateY(100%)'; close(null); }
+        else panel.style.transform = '';
+      },
+    });
     render(wrap.querySelector('.sheet-body'), close);
   });
 }
