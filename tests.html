@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>calc.js tests</title>
+  <link rel="stylesheet" href="css/app.css">
+  <style>
+    body { padding: calc(20px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom)); }
+    .summary { font-size: 18px; font-weight: 600; margin: 8px 0 16px; }
+    .row { display: flex; gap: 10px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); }
+    .row b { width: 44px; flex: none; font-family: var(--mono); font-size: 13px; }
+    .ok b { color: var(--pos); }
+    .bad b { color: var(--neg); }
+    .err { display: block; color: var(--neg); font-family: var(--mono); font-size: 12px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h1 class="page-title">calc.js tests</h1>
+  <p class="summary" id="summary">Running…</p>
+  <div id="results"></div>
+  <p><a href="./">← Back to the app</a></p>
+  <script type="module">
+    import { run } from './js/tests/calc.test.js';
+    import { esc } from './js/format.js';
+    const results = run();
+    const failed = results.filter((r) => !r.ok);
+    document.getElementById('summary').textContent = failed.length
+      ? `${failed.length} of ${results.length} failed`
+      : `All ${results.length} tests passed`;
+    document.getElementById('summary').style.color = failed.length ? 'var(--neg)' : 'var(--pos)';
+    document.getElementById('results').innerHTML = results.map((r) => `
+      <div class="row ${r.ok ? 'ok' : 'bad'}"><b>${r.ok ? 'PASS' : 'FAIL'}</b>
+        <span>${esc(r.name)}${r.ok ? '' : `<span class="err">${esc(r.error)}</span>`}</span></div>`).join('');
+  </script>
+</body>
+</html>

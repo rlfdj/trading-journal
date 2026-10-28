@@ -1,0 +1,215 @@
+// Journal (home): month summary, filters, trades grouped by day.
+
+import * as store from '../store.js';
+import { enrich, summarize, inPeriod, dayKey, dailyPnl } from '../calc.js';
+import { money, pts, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
+import { icons, sheet } from '../ui.js';
+import { exportJsonBackup } from '../backup.js';
+import { detailsFor, allDetails } from '../defaults.js';
+
+const BASE_FILTERS = ['instrument', 'grade', 'mistake'];
+const filterKeys = (settings) => [...BASE_FILTERS, ...allDetails(settings).map((g) => g.key)];
+
+// Kept between renders so filters survive opening and closing a trade.
+const state = {
+  chip: 'all',          // 'all' | 'wins' | 'losses' | 'setup:<name>'
+  searchOpen: false,
+  query: '',
+  instrument: null,
+  grade: null,
+  mistake: null,
+  // plus one key per setup detail (trend, pullbackTo, depth), added as used
+};
+let backupBannerHidden = false;
+
+/** "Strong Trend · EMA · Shallow" for a trade's setup details, or ''. */
+export function detailText(t, settings) {
+  return detailsFor(settings, t.setup).map((g) => t[g.key]).filter(Boolean).join(' · ');
+}
+
+export function tradeRowHtml(t, settings) {
+  const mistakes = t.mistakes || [];
+  const details = detailText(t, settings);
+  return `
+    <button class="trade-row" data-id="${esc(t.id)}">
+      <div class="trade-main">
+        <div class="trade-line1">
+          <span class="badge badge-${t.side}">${t.side === 'short' ? 'SHORT' : 'LONG'}</span>
+          <span class="setup">${esc(t.setup || 'No setup')}</span>
+        </div>
+        <div class="trade-line2">
+          <span class="num">${time(t.dateTime)}</span><span>· ${t.contracts} ${esc(t.instrument)}</span>
+          ${mistakes.length ? `<span class="tag tag-mistake">${esc(mistakes[0])}${mistakes.length > 1 ? ` +${mistakes.length - 1}` : ''}</span>` : ''}
+          ${t.sample ? '<span class="tag tag-sample">SAMPLE</span>' : ''}
+        </div>
+        ${details ? `<div class="trade-line3">${esc(details)}</div>` : ''}
+      </div>
+      <div class="trade-nums">
+        <div class="trade-net ${tone(t.m.net)}">${money(t.m.net)}</div>
+        <div class="trade-pts">${pts(t.m.points)}</div>
+      </div>
+    </button>`;
+}
+
+function matches(t, settings) {
+  if (state.chip === 'wins' && !(t.m.net > 0)) return false;
+  if (state.chip === 'losses' && !(t.m.net < 0)) return false;
+  if (state.chip.startsWith('setup:') && t.setup !== state.chip.slice(6)) return false;
+  if (state.instrument && t.instrument !== state.instrument) return false;
+  if (state.grade && t.grade !== state.grade) return false;
+  if (state.mistake && !(t.mistakes || []).includes(state.mistake)) return false;
+  if (allDetails(settings).some((g) => state[g.key] && t[g.key] !== state[g.key])) return false;
+  const q = state.query.trim().toLowerCase();
+  if (q) {
+    const hay = [t.setup, t.notes, t.instrument, t.side, t.grade, ...(t.mistakes || []),
+      detailText(t, settings)].join(' ').toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+const filterCount = (settings) => filterKeys(settings).filter((k) => state[k]).length;
+
+export async function render(el, { settings, params, go, refresh }) {
+  const trades = enrich(await store.listTrades(), settings);
+  const now = new Date();
+  const month = summarize(inPeriod(trades, 'month', now));
+  const monthInstruments = [...new Set(inPeriod(trades, 'month', now).map((t) => t.instrument))];
+  const dayNet = new Map(dailyPnl(trades).map((d) => [d.day, d.net]));
+  const setups = [...new Set([...settings.setups, ...trades.map((t) => t.setup).filter(Boolean)])];
+  if (state.chip.startsWith('setup:') && !setups.includes(state.chip.slice(6))) state.chip = 'all';
+
+  const needsBackup = trades.some((t) => !t.sample)
+    && (!settings.lastBackupAt || daysAgo(settings.lastBackupAt) > 7) && !backupBannerHidden;
+
+  el.innerHTML = `
+    <header class="page-head">
+      <h1 class="page-title">Journal</h1>
+      <button class="icon-btn" data-act="search" aria-label="Search trades" aria-expanded="${state.searchOpen}">${icons.search}</button>
+      <button class="icon-btn" data-act="filter" aria-label="Filter trades">${icons.filter}${filterCount(settings) ? '<span class="dot"></span>' : ''}</button>
+    </header>
+    ${state.searchOpen ? `
+      <div class="search-row">
+        <input class="input" type="search" data-search placeholder="Search setup, notes, mistakes" value="${esc(state.query)}" enterkeyhint="search">
+      </div>` : ''}
+    ${settings.sampleLoaded ? `
+      <div class="banner banner-warn"><p><b>Sample data is on.</b> Turn it off in Settings to remove it.</p></div>` : ''}
+    ${needsBackup ? `
+      <div class="banner"><p>${settings.lastBackupAt
+        ? `Last backup was ${daysAgo(settings.lastBackupAt)} days ago.`
+        : 'You haven’t backed up yet.'} Your journal only lives on this phone.</p>
+        <button class="btn btn-primary" data-act="backup">Back up</button>
+        <button class="icon-btn bare" data-act="hide-backup" aria-label="Remind me later">${icons.close}</button>
+      </div>` : ''}
+    <section class="hero" aria-label="This month">
+      <div class="hero-top"><span>${monthName(now.getMonth())} · Net P&amp;L</span>
+        <span class="num">${esc(monthInstruments.join(' · ') || settings.defaultInstrument)}</span></div>
+      <div class="hero-net num ${tone(month.net)}">${money(month.net)}</div>
+      <div class="hero-stats">
+        <div><span>Win rate</span><b>${pct(month.winRate)}</b></div>
+        <div><span>Trades</span><b>${month.count}</b></div>
+        <div><span>Profit factor</span><b>${ratio(month.profitFactor)}</b></div>
+      </div>
+    </section>
+    <div class="chips journal-filters" role="toolbar" aria-label="Show"></div>
+    <div data-list></div>`;
+
+  const chipsEl = el.querySelector('.journal-filters');
+  const listEl = el.querySelector('[data-list]');
+
+  function drawChips() {
+    const chips = [['all', 'All'], ['wins', 'Wins'], ['losses', 'Losses'], ...setups.map((s) => [`setup:${s}`, s])];
+    chipsEl.innerHTML = chips.map(([k, label]) =>
+      `<button class="chip" data-chip="${esc(k)}" aria-pressed="${state.chip === k}">${esc(label)}</button>`).join('');
+  }
+
+  function drawList() {
+    if (!trades.length) {
+      listEl.innerHTML = `<div class="empty"><strong>No trades yet</strong>Tap + to log your first trade.</div>`;
+      return;
+    }
+    const shown = trades.filter((t) => matches(t, settings));
+    if (!shown.length) {
+      listEl.innerHTML = `<div class="empty"><strong>No matching trades</strong>Try another filter.</div>`;
+      return;
+    }
+    const groups = [];
+    for (const t of shown) {
+      const k = dayKey(t.dateTime);
+      if (!groups.length || groups[groups.length - 1].key !== k) groups.push({ key: k, trades: [] });
+      groups[groups.length - 1].trades.push(t);
+    }
+    listEl.innerHTML = groups.map((g) => `
+      <section id="day-${g.key}">
+        <h2 class="day-head"><span>${dayLabel(g.key)}</span>
+          <span class="num ${tone(dayNet.get(g.key))}">${money(dayNet.get(g.key))}</span></h2>
+        <div class="card trade-list">${g.trades.map((t) => tradeRowHtml(t, settings)).join('')}</div>
+      </section>`).join('');
+  }
+
+  drawChips();
+  drawList();
+
+  const search = el.querySelector('[data-search]');
+  if (search) {
+    search.oninput = () => { state.query = search.value; drawList(); };
+    if (!state.query) search.focus();
+  }
+
+  el.onclick = async (e) => {
+    const row = e.target.closest('[data-id]');
+    if (row) { go(`#/trade/${row.dataset.id}`); return; }
+    const chip = e.target.closest('[data-chip]');
+    if (chip) { state.chip = chip.dataset.chip; drawChips(); drawList(); return; }
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'search') {
+      state.searchOpen = !state.searchOpen;
+      if (!state.searchOpen) state.query = '';
+      refresh();
+    } else if (act === 'filter') {
+      await openFilters(settings, trades);
+      refresh();
+    } else if (act === 'backup') {
+      if (await exportJsonBackup()) refresh();
+    } else if (act === 'hide-backup') {
+      backupBannerHidden = true;
+      refresh();
+    }
+  };
+
+  const day = params.get('day');
+  if (day) {
+    const target = el.querySelector(`#day-${CSS.escape(day)}`);
+    if (target) requestAnimationFrame(() => window.scrollTo(0, target.getBoundingClientRect().top + window.scrollY - 12));
+  }
+}
+
+function openFilters(settings, trades) {
+  const instruments = [...new Set(trades.map((t) => t.instrument))];
+  const mistakes = [...new Set([...settings.mistakes, ...trades.flatMap((t) => t.mistakes || [])])];
+  const group = (label, key, options) => `
+    <p class="section-label">${label}</p>
+    <div class="chips wrap">
+      <button class="chip" data-k="${key}" data-v="" aria-pressed="${!state[key]}">Any</button>
+      ${options.map((o) => `<button class="chip" data-k="${key}" data-v="${esc(o)}" aria-pressed="${state[key] === o}">${esc(o)}</button>`).join('')}
+    </div>`;
+  return sheet('Filter trades', (body, close) => {
+    const draw = () => {
+      body.innerHTML = `
+        ${instruments.length > 1 ? group('Instrument', 'instrument', instruments) : ''}
+        ${allDetails(settings).map((g) => group(esc(g.label), g.key, g.options)).join('')}
+        ${group('Grade', 'grade', ['A', 'B', 'C', 'D'])}
+        ${group('Mistake', 'mistake', mistakes)}
+        <div style="height:16px"></div>
+        <button class="btn btn-primary btn-block" data-done>Done</button>
+        <button class="btn btn-ghost btn-block" data-clear>Clear filters</button>`;
+    };
+    draw();
+    body.onclick = (e) => {
+      const chip = e.target.closest('[data-k]');
+      if (chip) { state[chip.dataset.k] = chip.dataset.v || null; draw(); return; }
+      if (e.target.closest('[data-clear]')) { filterKeys(settings).forEach((k) => { state[k] = null; }); close(); }
+      if (e.target.closest('[data-done]')) close();
+    };
+  });
+}
