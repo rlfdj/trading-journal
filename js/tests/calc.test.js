@@ -1,5 +1,6 @@
 // Unit tests for calc.js. Run by opening tests.html.
 import * as calc from '../calc.js';
+import * as csv from '../csv.js';
 
 const MNQ = { symbol: 'MNQ', pointValue: 2, tickSize: 0.25 };
 const ES = { symbol: 'ES', pointValue: 50, tickSize: 0.25 };
@@ -232,6 +233,25 @@ export const tests = [
     const list = [net(1, { dateTime: at(1) }), net(1, { dateTime: new Date(2026, 8, 30).toISOString() })];
     eq(calc.inPeriod(list, 'month', new Date(2026, 9, 20)).length, 1);
     eq(calc.inPeriod(list, 'all').length, 2);
+  }],
+  ['CSV import: date formats people type in a spreadsheet', () => {
+    const want = calc.dayKey(new Date(2026, 9, 21)) + ' 09:42';
+    const show = (d) => (d ? `${calc.dayKey(d)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : null);
+    eq(show(csv.parseDateTime('2026-10-21 09:42')), want);
+    eq(show(csv.parseDateTime('2026-10-21T09:42:00')), want);
+    eq(show(csv.parseDateTime('10/21/2026 9:42 AM')), want);
+    eq(show(csv.parseDateTime('10/21/2026 9:42')), want);
+    eq(show(csv.parseDateTime('21/10/2026 09:42')), want);
+    eq(show(csv.parseDateTime('10/21/26 9:42:00 AM')), want);
+    eq(show(csv.parseDateTime('10/21/2026 1:05 PM')), '2026-10-21 13:05');
+    eq(show(csv.parseDateTime('10/21/2026 12:15 AM')), '2026-10-21 00:15');
+    eq(csv.parseDateTime('2026-02-30 09:00'), null);
+    eq(csv.parseDateTime('next tuesday'), null);
+    eq(csv.parseDateTime(''), null);
+  }],
+  ['CSV import: comma and semicolon files', () => {
+    eq(JSON.stringify(csv.parseCsv('a,b\n1,"x, y"\n')), JSON.stringify([['a', 'b'], ['1', 'x, y']]));
+    eq(JSON.stringify(csv.parseCsv('a;b\r\n1;2,5\r\n')), JSON.stringify([['a', 'b'], ['1', '2,5']]));
   }],
   ['round2 never returns -0', () => {
     eq(Object.is(calc.round2(-0.001), -0), false);

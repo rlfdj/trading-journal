@@ -742,3 +742,5 @@ button.cal-cell { border-color: var(--line); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; }
 }
+
+.problem-list { margin: 0 0 8px; padding-left: 20px; font-family: var(--mono); font-size: 13px; line-height: 1.6; max-height: 40vh; overflow-y: auto; }

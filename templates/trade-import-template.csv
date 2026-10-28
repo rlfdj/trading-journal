@@ -1,0 +1,4 @@
+date,time,side,contracts,entry,exit,stop,target,setup,trend,pullbackTo,depth,mistakes,grade,fees,notes
+2026-10-21,09:42,long,2,25812.25,25836.50,25804.00,25840.00,Trend Pullback,Strong Trend,EMA,Shallow,,A,,EXAMPLE - delete this row
+2026-10-21,10:15,short,1,25850.00,25858.75,25860.00,,Disconnect Fade,,,,Early entry,C,,EXAMPLE - delete this row
+2026-10-21,13:05,short,1,25870.25,25856.50,25878.00,25850.00,Range Fade,,,,,B,,EXAMPLE - delete this row

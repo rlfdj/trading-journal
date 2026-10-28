@@ -1,14 +1,16 @@
 // backup.js — export (JSON, CSV) and import, using the iOS share sheet when available.
 
 import * as store from './store.js';
-import { enrich, feesFor, findInstrument, hasNum } from './calc.js';
-import { toCsv, parseCsv } from './csv.js';
+import { enrich, feesFor, findInstrument, hasNum, isOnTick } from './calc.js';
+import { toCsv, parseCsv, parseDateTime } from './csv.js';
 import { toast, sheet } from './ui.js';
 import { esc } from './format.js';
 import { detailsFor } from './defaults.js';
 
 /** CSV value → the tag's own spelling (case-insensitive), or '' if it isn't one of the options. */
 const matchOption = (group, v) => group.options.find((o) => o.toLowerCase() === v.toLowerCase()) || '';
+/** Use the list's spelling when the CSV matches an existing name in another case. */
+const matchName = (list, v) => list.find((o) => o.toLowerCase() === v.toLowerCase()) || v;
 
 const CSV_COLUMNS = [
   'id', 'dateTime', 'instrument', 'side', 'contracts', 'entry', 'exit', 'stop', 'target',
@@ -111,9 +113,17 @@ export async function importJsonFile(file) {
   return store.importAll(data);
 }
 
+/** "entry 25900.1 not on 0.25 tick", or '' when every price is on the tick. */
+function offTick(trade, inst) {
+  for (const f of ['entry', 'exit', 'stop', 'target']) {
+    if (hasNum(trade[f]) && !isOnTick(trade[f], inst.tickSize)) return `${f} ${trade[f]} not on ${inst.tickSize} tick`;
+  }
+  return '';
+}
+
 /**
- * Import trades from CSV. Needs columns dateTime, side, contracts, entry, exit;
- * the rest are optional. Rows with an id merge by updatedAt like JSON imports
+ * Import trades from CSV. Needs columns side, contracts, entry, exit, plus either
+ * dateTime or separate date and time columns; the rest are optional. Rows with an id merge by updatedAt like JSON imports
  * (CSV rows count as "now", so they win).
  */
 export async function importCsvFile(file) {
@@ -121,11 +131,20 @@ export async function importCsvFile(file) {
   if (rows.length < 2) throw new Error('No rows found in that CSV.');
   const head = rows[0].map((h) => h.trim().toLowerCase());
   const col = (name) => head.indexOf(name.toLowerCase());
-  for (const need of ['dateTime', 'side', 'contracts', 'entry', 'exit']) {
+  for (const need of ['side', 'contracts', 'entry', 'exit']) {
     if (col(need) < 0) throw new Error(`The CSV needs a “${need}” column.`);
   }
+  if (col('dateTime') < 0 && (col('date') < 0 || col('time') < 0)) {
+    throw new Error('The CSV needs a “dateTime” column, or “date” and “time” columns.');
+  }
   const settings = await store.getSettings();
-  const num = (v) => (v === undefined || v.trim() === '' ? null : Number(v.replace(',', '.')));
+  // Accepts 25812.25, 25,812.25, 25812,25 and $1.82.
+  const num = (v) => {
+    let x = String(v ?? '').replace(/[$\s]/g, '');
+    if (x === '') return null;
+    x = x.includes(',') && x.includes('.') ? x.replace(/,/g, '') : x.replace(',', '.');
+    return Number(x);
+  };
   const problems = [];
   let imported = 0;
   let duplicates = 0;
@@ -135,12 +154,12 @@ export async function importCsvFile(file) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     const get = (name) => (col(name) >= 0 ? (r[col(name)] ?? '').trim() : '');
-    const when = new Date(get('dateTime'));
+    const when = parseDateTime(col('dateTime') >= 0 ? get('dateTime') : `${get('date')} ${get('time')}`);
     const side = get('side').toLowerCase();
     const instrument = (get('instrument') || settings.defaultInstrument).toUpperCase();
     const trade = {
       id: get('id') || undefined,
-      dateTime: Number.isNaN(when.getTime()) ? null : when.toISOString(),
+      dateTime: when ? when.toISOString() : null,
       instrument,
       side: ['short', 's', 'sell'].includes(side) ? 'short' : ['long', 'l', 'buy'].includes(side) ? 'long' : null,
       contracts: Math.round(num(get('contracts')) || 0),
@@ -148,8 +167,8 @@ export async function importCsvFile(file) {
       exit: num(get('exit')),
       stop: num(get('stop')),
       target: num(get('target')),
-      setup: get('setup'),
-      mistakes: get('mistakes').split(/[;|]/).map((s) => s.trim()).filter(Boolean),
+      setup: get('setup') ? matchName(settings.setups, get('setup')) : '',
+      mistakes: get('mistakes').split(/[;|]/).map((s) => s.trim()).filter(Boolean).map((m) => matchName(settings.mistakes, m)),
       grade: /^[A-D]$/i.test(get('grade')) ? get('grade').toUpperCase() : '',
       notes: get('notes'),
       screenshotIds: [],
@@ -160,9 +179,10 @@ export async function importCsvFile(file) {
     }
     const fees = num(get('fees'));
     trade.fees = hasNum(fees) ? fees : feesFor(settings, instrument, trade.contracts);
-    const bad = !trade.dateTime ? 'date' : !trade.side ? 'side' : trade.contracts < 1 ? 'contracts'
-      : !hasNum(trade.entry) || !hasNum(trade.exit) ? 'entry/exit'
-      : !findInstrument(settings, instrument) ? `unknown instrument ${instrument}` : null;
+    const bad = !trade.dateTime ? 'date/time not understood' : !trade.side ? 'side must be long or short' : trade.contracts < 1 ? 'contracts must be 1 or more'
+      : !hasNum(trade.entry) || !hasNum(trade.exit) ? 'entry and exit prices are required'
+      : !findInstrument(settings, instrument) ? `unknown instrument ${instrument}`
+      : offTick(trade, findInstrument(settings, instrument)) || null;
     if (bad) { problems.push(`row ${i + 1}: ${bad}`); continue; }
     if (trade.id) {
       const existing = await store.getTrade(trade.id);

@@ -82,7 +82,29 @@ Open `tests.html` (Settings → About → Run calculation tests) to run the unit
 - **Back up everything (JSON)** saves trades, settings and screenshots (base64) into one file. On iPhone the share sheet opens, so you can **Save to Files** or AirDrop it. On a computer the file downloads.
 - **Export CSV** saves trades only, without screenshots, for Excel or Numbers.
 - **Restore backup** merges a JSON backup by trade id, and the newer edit wins, so restoring an old backup never overwrites newer changes.
-- **Import trades from CSV** needs the columns `dateTime, side, contracts, entry, exit`. These are optional: `id, instrument, stop, target, setup, trend, pullbackTo, depth, mistakes` (separated by `;`), `grade, fees, notes`. `trend / pullbackTo / depth` are only kept on Trend Pullback rows. Rows that match a trade already in the app are skipped. The app's own CSV export can be imported back.
+- **Import trades from CSV** — see [Logging trades from a spreadsheet](#logging-trades-from-a-spreadsheet). The app's own CSV export can be imported back.
+
+### Logging trades from a spreadsheet
+Start from [`templates/trade-import-template.csv`](templates/trade-import-template.csv). Open it in Excel, Numbers or Google Sheets, delete the three example rows, add one row per trade, and save as **CSV**. Get the file onto your iPhone (AirDrop, iCloud Drive, or email it to yourself and tap **Save to Files**), then in the app go to **Settings → Import trades from CSV** and pick the file.
+
+| Column | Required | What to put |
+| --- | --- | --- |
+| `date` | yes | `2026-10-21` (Excel's `10/21/2026` also works) |
+| `time` | yes | Entry time on your phone's clock, 24-hour `09:42` or `9:42 AM` |
+| `side` | yes | `long` or `short` |
+| `contracts` | yes | `1`, `2`, … |
+| `entry`, `exit` | yes | Prices on the 0.25 tick, e.g. `25812.25` |
+| `stop`, `target` | no | Prices; `stop` is needed for R and risk |
+| `setup` | no | `Trend Pullback`, `Disconnect Fade` or `Range Fade` |
+| `trend` | no | `Price Trend`, `Trend` or `Strong Trend` (Trend Pullback only) |
+| `pullbackTo` | no | `EMA` or `VWAP` (Trend Pullback only) |
+| `depth` | no | `Shallow` or `Deep` (Trend Pullback only) |
+| `mistakes` | no | Separate several with `;`, e.g. `Early entry; Chased` |
+| `grade` | no | `A`, `B`, `C` or `D` |
+| `fees` | no | Leave empty to use $1.82 × contracts |
+| `notes` | no | Anything. Wrap it in quotes if it has a comma (spreadsheet apps do this for you). |
+
+A single `dateTime` column (`2026-10-21 09:42`) works instead of `date` + `time`, and so does an `instrument` column (default `MNQ`). Upper or lower case doesn't matter. Rows that match a trade already in the app (same time, side, contracts, entry and exit) are skipped, so importing the same file twice is safe. Rows the app can't read are skipped too, and listed by row number after the import.
 
 ### Sample data
 Settings → Testing → **Load sample data** adds about 70 fake MNQ trades marked **SAMPLE**, and a banner shows on the Journal while they're loaded. Turning it off removes only the sample trades. Your own trades are never touched.

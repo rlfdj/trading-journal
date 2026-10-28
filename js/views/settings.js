@@ -2,7 +2,7 @@
 
 import * as store from '../store.js';
 import { moneyPlain, shortDate, daysAgo, esc } from '../format.js';
-import { toast, confirmSheet, promptSheet, formSheet } from '../ui.js';
+import { toast, sheet, confirmSheet, promptSheet, formSheet } from '../ui.js';
 import { exportJsonBackup, exportCsv, pickFile, importJsonFile, importCsvFile } from '../backup.js';
 import { loadSample, removeSample } from '../sample.js';
 import { getVersion } from '../pwa.js';
@@ -188,15 +188,25 @@ export async function render(el, { settings, refresh }) {
     else if (act === 'restore') await restore('.json,application/json', importJsonFile, (r) =>
       `Restored: ${r.added} added, ${r.updated} updated, ${r.unchanged} unchanged`);
     else if (act === 'import-csv') await restore('.csv,text/csv', importCsvFile, (r) =>
-      `Imported ${r.imported} trade${r.imported === 1 ? '' : 's'}${r.duplicates ? `, ${r.duplicates} already here` : ''}${r.problems.length ? `, skipped ${r.problems.length} (${r.problems.slice(0, 3).join('; ')})` : ''}`);
+      `Imported ${r.imported} trade${r.imported === 1 ? '' : 's'}${r.duplicates ? `, ${r.duplicates} already here` : ''}${r.problems.length ? `, skipped ${r.problems.length}` : ''}`);
   };
 
   async function restore(accept, importer, summary) {
     const file = await pickFile(accept);
     if (!file) return;
     try {
-      toast(summary(await importer(file)));
+      const result = await importer(file);
       refresh();
+      if (result.problems && result.problems.length) {
+        // Row-by-row reasons are too long for a toast; keep them on screen until dismissed.
+        await sheet('Import finished', (body, close) => {
+          body.innerHTML = `<p class="sheet-msg">${esc(summary(result))}. These rows were not imported:</p>
+            <ul class="problem-list">${result.problems.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+            <p class="note">Fix them in the spreadsheet and import the file again. Rows already imported are skipped.</p>
+            <button class="btn btn-primary btn-block" data-ok>OK</button>`;
+          body.querySelector('[data-ok]').onclick = () => close();
+        });
+      } else toast(summary(result));
     } catch (err) {
       toast(err.message);
     }
