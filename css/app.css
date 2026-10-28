@@ -432,12 +432,16 @@ a { color: inherit; }
 .form-head .link-btn:first-child { justify-self: start; color: var(--muted); }
 .form-head .link-btn:last-child { justify-self: end; font-weight: 700; }
 
-.inst-card { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px 16px; min-height: 64px; }
-.inst-card .inst-text { flex: 1; min-width: 0; }
-.inst-name { font-size: 17px; }
+.inst-card { padding: 0 16px; }
+/* Each row holds its own invisible native picker, so the two never overlap. */
+.inst-row { position: relative; display: flex; align-items: center; gap: 10px; min-height: 52px; }
+.inst-row + .inst-row { border-top: 1px solid var(--line); }
+.inst-name { flex: 1; min-width: 0; font-size: 17px; }
+.inst-date-row svg { color: var(--muted); flex: none; }
+.inst-date { flex: 1; font-size: 16px; }
+.inst-change { font-size: 14px; font-weight: 600; color: var(--muted); }
 .inst-name b { font-weight: 700; }
 .inst-name span { color: var(--muted); }
-.inst-date { position: relative; color: var(--muted); font-size: 14px; margin-top: 2px; display: inline-block; }
 .inst-pv { font-family: var(--mono); font-size: 13px; background: var(--soft); padding: 4px 8px; border-radius: 8px; }
 /* Native pickers laid invisibly over their labels so iOS shows its own wheels. */
 .overlay-input {
@@ -449,8 +453,6 @@ a { color: inherit; }
   -webkit-appearance: none;
   appearance: none;
 }
-.inst-pick { position: absolute; left: 0; top: 0; right: 90px; height: 60%; }
-.inst-date .overlay-input { min-width: 100%; }
 
 .form-block { margin-top: 12px; }
 .stepper-card { display: flex; align-items: center; padding: 8px 8px 8px 16px; min-height: 64px; }

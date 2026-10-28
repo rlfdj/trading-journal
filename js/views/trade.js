@@ -86,17 +86,19 @@ export async function render(el, { id, params, settings, close }) {
       </header>
 
       <div class="card inst-card">
-        <div class="inst-text">
-          <div class="inst-name" data-inst-name></div>
-          <div class="inst-date">
-            <span data-date-label></span>
-            <input class="overlay-input" type="datetime-local" data-date aria-label="Date and time" value="${toLocalInput(t.dateTime)}">
-          </div>
+        <div class="inst-row">
+          <div class="inst-name"><span data-inst-name></span></div>
+          <span class="inst-pv" data-pv></span>
+          <select class="overlay-input" data-inst aria-label="Instrument">
+            ${instruments.map((i) => `<option value="${esc(i.symbol)}" ${i.symbol === t.instrument ? 'selected' : ''}>${esc(i.symbol)} · ${esc(i.name)}</option>`).join('')}
+          </select>
         </div>
-        <span class="inst-pv" data-pv></span>
-        <select class="overlay-input inst-pick" data-inst aria-label="Instrument">
-          ${instruments.map((i) => `<option value="${esc(i.symbol)}" ${i.symbol === t.instrument ? 'selected' : ''}>${esc(i.symbol)} · ${esc(i.name)}</option>`).join('')}
-        </select>
+        <div class="inst-row inst-date-row">
+          ${icons.calendar}
+          <span class="inst-date" data-date-label></span>
+          <span class="inst-change">Change</span>
+          <input class="overlay-input" type="datetime-local" data-date aria-label="Trade date and time" value="${toLocalInput(t.dateTime)}">
+        </div>
       </div>
 
       <div class="segmented form-block" role="group" aria-label="Side" data-side>

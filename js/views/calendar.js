@@ -105,9 +105,8 @@ export async function render(el, { settings, go, refresh }) {
           <span class="name">${esc(t.setup || 'No setup')}</span>
           <span class="v num ${tone(t.m.net)}">${money(t.m.net)}</span>
         </button>`).join('')}
-      ${selTrades.length
-        ? `<button class="btn btn-soft btn-block" data-journal>Open in Journal</button>`
-        : `<button class="btn btn-soft btn-block" data-log>Log a trade on this day</button>`}
+      <button class="btn btn-soft btn-block" data-log>+ Log a trade on this day</button>
+      ${selTrades.length ? '<button class="btn btn-ghost btn-block" data-journal>Open in Journal</button>' : ''}
     </section>` : ''}`;
 
   el.onclick = (e) => {
