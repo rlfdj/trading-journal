@@ -49,6 +49,8 @@ export function defaultSettings() {
     dailyLossLimit: null,
     drawdownLimit: null,      // trailing, from the highest end-of-day balance
     accountStart: null,       // 'YYYY-MM-DD': limits count trades from this day
+    accountSize: null,        // starting balance in $, for % returns on the Calendar
+    calendarMode: 'pnl',      // what calendar cells show: 'pnl' | 'pct' | 'trades' | 'winrate'
     stopUnit: 'price',        // trade form: stop & target typed as 'price' or 'points'
     lastBackupAt: null,
     sampleLoaded: false,

@@ -38,6 +38,8 @@ export function signed(x, decimals = 2) {
 
 export const pts = (x) => `${signed(x)} pts`;
 export const rMult = (x) => (x === null || x === undefined ? '—' : `${signed(x)}R`);
+/** +0.19% — a signed percentage that is already ×100. */
+export const pctSigned = (x) => (x === null || x === undefined ? '—' : `${signed(x, Math.abs(x) >= 10 ? 1 : 2)}%`);
 export const pct = (x) => (x === null || x === undefined ? '—' : `${Math.round(x * 100)}%`);
 
 export function ratio(x) {

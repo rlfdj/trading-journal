@@ -304,6 +304,11 @@ export const tests = [
     eq(calc.accountRules(list, {}, now).daily, null);
     eq(calc.accountRules([mk(23, -600)], { dailyLossLimit: 500 }, now).daily.breached, true);
   }],
+  ['percent of account size', () => {
+    eq(calc.pctOfAccount(95, 50000), 0.19);
+    eq(calc.pctOfAccount(-250, 50000), -0.5);
+    eq(calc.pctOfAccount(95, null), null);
+  }],
   ['round2 never returns -0', () => {
     eq(Object.is(calc.round2(-0.001), -0), false);
     eq(calc.round2(1.005 + 0.0000001), 1.01);

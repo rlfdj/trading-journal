@@ -319,6 +319,11 @@ export function pnlByWeekday(list) {
   return groupRows(list, (t) => new Date(t.dateTime).getDay(), [1, 2, 3, 4, 5, 6, 0]);
 }
 
+/** Net as a % of account size (e.g. 0.19 for +$95 on $50,000). null without a size. */
+export function pctOfAccount(net, accountSize) {
+  return accountSize > 0 ? Math.round((net / accountSize) * 10000) / 100 : null;
+}
+
 // ------------------------------------------------------------ account rules
 
 /**

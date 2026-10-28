@@ -50,7 +50,7 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 | --- | --- |
 | **Journal** | This month's net P&L, win rate, trade count and profit factor, plus today's daily-loss meter if you set a limit. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first, and the day header stays pinned while you scroll. Tap a trade to edit it; swipe it left for **Duplicate** and **Delete** (with Undo). |
 | **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
-| **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Tap a day to see its trades. Weekend trades count in the week total. |
+| **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Switch what the days show: **$** P&L, **%** of account size, **Trades** taken or **Win %** (colours always follow P&L). Tap a day to see its trades. Weekend trades count in the week total. |
 | **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Trailing-drawdown meter if you set a limit, equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
 | **Settings** | Instruments, commission, account limits, entry reason and mistake lists, backup and restore, sample data, app version. |
 
@@ -65,7 +65,7 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 - **Screenshots** open full screen: pinch or double-tap to zoom, swipe sideways for the next one, swipe down to close.
 
 ### Account limits (Tradeify)
-Settings → Account limits takes two dollar amounts from your Tradeify account rules. Leave either blank to hide its meter.
+Settings → Account limits takes your **account size** (the starting balance, e.g. 50000; used for % on the Calendar, where % = day net ÷ account size) and two dollar amounts from your Tradeify account rules. Leave either blank to hide its meter.
 
 - **Daily loss limit**: the Journal shows today's loss against it. The bar turns amber at 50% used and red at 75%.
 - **Trailing drawdown**: Stats shows how far the balance can fall before it reaches the floor. The floor is the highest **end-of-day** balance minus the limit; today's close only counts once the day is over.

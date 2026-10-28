@@ -64,6 +64,10 @@ export async function render(el, { settings, refresh }) {
     <p class="section-label">Account limits</p>
     <div class="card list">
       <div class="list-row">
+        <label class="grow" for="acct-size">Account size<div class="sub">Starting balance, e.g. 50000 for a 50K account. Used for % on the Calendar.</div></label>
+        <input class="input num" id="acct-size" inputmode="decimal" placeholder="Off" data-limit="accountSize" value="${settings.accountSize ? esc(settings.accountSize) : ''}">
+      </div>
+      <div class="list-row">
         <label class="grow" for="daily-limit">Daily loss limit<div class="sub">Meter on the Journal for today.</div></label>
         <input class="input num" id="daily-limit" inputmode="decimal" placeholder="Off" data-limit="dailyLossLimit" value="${settings.dailyLossLimit ? esc(settings.dailyLossLimit) : ''}">
       </div>
@@ -155,7 +159,8 @@ export async function render(el, { settings, refresh }) {
         return;
       }
       input.value = v ?? '';
-      await save({ [key]: v }, v ? `${key === 'dailyLossLimit' ? 'Daily loss limit' : 'Trailing drawdown'} set to ${moneyPlain(v)}` : 'Meter turned off');
+      const name = { dailyLossLimit: 'Daily loss limit', drawdownLimit: 'Trailing drawdown', accountSize: 'Account size' }[key];
+      await save({ [key]: v }, v ? `${name} set to ${moneyPlain(v)}` : `${name} cleared`);
     };
   });
   el.querySelector('[data-acct-start]').onchange = (e) => save({ accountStart: e.target.value || null },

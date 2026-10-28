@@ -1,9 +1,10 @@
 // Calendar: Mon–Fri month grid with weekly totals; tap a day to list its trades.
 // Swipe the grid sideways to change month; tap the month name to jump.
+// Cells show $ P&L, % of account, trade count or win rate (shading always follows P&L).
 
 import * as store from '../store.js';
-import { enrich, summarize, dailyPnl, dayKey, round2 } from '../calc.js';
-import { money, moneyCompact, tone, dayLabel, time, monthShort, monthName, esc } from '../format.js';
+import { enrich, dailyPnl, dayKey, round2, pctOfAccount } from '../calc.js';
+import { money, moneyCompact, pct, pctSigned, signed, tone, dayLabel, time, monthShort, monthName, esc } from '../format.js';
 import { icons, sheet } from '../ui.js';
 import { pageSwipe, slideIn } from '../gestures.js';
 
@@ -11,6 +12,37 @@ const today = () => new Date();
 let shown = null;     // first day of the month being viewed
 let selected = null;  // selected day key
 let slideDir = 0;     // direction of the last month change, for the slide-in
+
+const MODES = [['pnl', '$'], ['pct', '%'], ['trades', 'Trades'], ['winrate', 'Win %']];
+const MONTH_LABEL = { pnl: 'Month net', pct: 'Month return', trades: 'Trades', winrate: 'Win rate' };
+
+/** Totals for a day, week or month: {net, count, wins, losses}. */
+const tally = () => ({ net: 0, count: 0, wins: 0, losses: 0 });
+function add(into, t) {
+  into.net = round2(into.net + t.m.net);
+  into.count++;
+  if (t.m.net > 0) into.wins++;
+  else if (t.m.net < 0) into.losses++;
+}
+
+/** The figure shown for a tally in the current mode, as {text, cls}. */
+function figure(mode, s, settings, compact) {
+  switch (mode) {
+    case 'pct': {
+      const p = pctOfAccount(s.net, settings.accountSize);
+      // Cells are narrow: drop the % sign there (the toggle says %).
+      return { text: compact ? (p === null ? '—' : signed(p, Math.abs(p) >= 10 ? 1 : 2)) : pctSigned(p), cls: tone(s.net) };
+    }
+    case 'trades':
+      return { text: compact ? String(s.count) : `${s.count} trade${s.count === 1 ? '' : 's'}`, cls: 'flat' };
+    case 'winrate': {
+      const decided = s.wins + s.losses;
+      return { text: decided ? pct(s.wins / decided) : '—', cls: 'flat' };
+    }
+    default:
+      return { text: compact ? moneyCompact(s.net) : money(s.net), cls: tone(s.net) };
+  }
+}
 
 function shade(net, maxAbs) {
   if (!net) return '';
@@ -28,7 +60,16 @@ export async function render(el, { settings, go, refresh }) {
 
   const trades = enrich(await store.listTrades({ from: shown, to: monthEnd }), settings);
   const days = new Map(dailyPnl(trades).map((d) => [d.day, d]));
-  const month = summarize(trades);
+  const mode = MODES.some(([k]) => k === settings.calendarMode) ? settings.calendarMode : 'pnl';
+  const needsSize = mode === 'pct' && !(settings.accountSize > 0);
+  const dayTally = new Map();
+  const monthTally = tally();
+  for (const t of trades) {
+    const k = dayKey(t.dateTime);
+    if (!dayTally.has(k)) dayTally.set(k, tally());
+    add(dayTally.get(k), t);
+    add(monthTally, t);
+  }
   const dayList = [...days.values()];
   const up = dayList.filter((d) => d.net > 0).length;
   const down = dayList.filter((d) => d.net < 0).length;
@@ -46,14 +87,17 @@ export async function render(el, { settings, go, refresh }) {
   const start = new Date(y, mo, 1 - ((first.getDay() + 6) % 7));
   let cells = '';
   for (let wk = new Date(start); wk < monthEnd; wk.setDate(wk.getDate() + 7)) {
-    let weekNet = 0;
-    let weekHas = false;
+    const week = tally();
     for (let i = 0; i < 7; i++) {
       const d = new Date(wk.getFullYear(), wk.getMonth(), wk.getDate() + i);
       const k = dayKey(d);
       const inMonth = d.getMonth() === mo;
       const info = inMonth ? days.get(k) : null;
-      if (info) { weekNet = round2(weekNet + info.net); weekHas = true; }
+      if (info) {
+        const s = dayTally.get(k);
+        week.net = round2(week.net + s.net);
+        week.count += s.count; week.wins += s.wins; week.losses += s.losses;
+      }
       if (i > 4) continue;
       if (!inMonth) { cells += `<div class="cal-cell out"><span class="d">${d.getDate()}</span></div>`; continue; }
       const cls = ['cal-cell', info ? shade(info.net, maxAbs) : '', k === todayKey ? 'today' : '', k === selected ? 'selected' : '']
@@ -61,12 +105,13 @@ export async function render(el, { settings, go, refresh }) {
       const label = `${dayLabel(k)}${info ? `, ${money(info.net)}, ${info.count} trade${info.count === 1 ? '' : 's'}` : ', no trades'}`;
       cells += `<button class="${cls}" data-day="${k}" aria-label="${esc(label)}" aria-pressed="${k === selected}">
         <span class="d">${d.getDate()}</span>
-        ${info ? `<span class="v ${tone(info.net)}">${moneyCompact(info.net)}</span>`
+        ${info ? (() => { const f = figure(mode, dayTally.get(k), settings, true); return `<span class="v ${f.cls}">${f.text}</span>`; })()
           : k === todayKey ? '<span class="today-label">today</span>' : ''}
       </button>`;
     }
-    cells += `<div class="cal-cell cal-week"><span class="d">WK</span>${weekHas
-      ? `<span class="v ${tone(weekNet)}">${moneyCompact(weekNet)}</span>` : ''}</div>`;
+    const wf = week.count ? figure(mode, week, settings, true) : null;
+    cells += `<div class="cal-cell cal-week"><span class="d">WK</span>${wf
+      ? `<span class="v ${wf.cls}">${wf.text}</span>` : ''}</div>`;
   }
 
   const sel = selected ? days.get(selected) : null;
@@ -86,13 +131,19 @@ export async function render(el, { settings, go, refresh }) {
     <div class="swipe-area" data-swipe>
     <div class="swipe-content" data-swipe-content>
     <section class="card month-sum">
-      <div><div class="label">Month net</div><div class="num ${tone(month.net)}">${money(month.net)}</div></div>
+      <div><div class="label">${MONTH_LABEL[mode]}</div>${(() => { const f = figure(mode, monthTally, settings, false); return `<div class="num ${f.cls}">${f.text}</div>`; })()}</div>
       <div class="legend">
         <span><i style="background:var(--pos)"></i>${up} up</span>
         <span><i style="background:var(--neg)"></i>${down} down</span>
       </div>
       ${isThisMonth ? '' : '<button class="chip today-chip" data-today>Today</button>'}
     </section>
+
+    <div class="segmented mini cal-mode" role="group" aria-label="Show in calendar" data-mode>
+      ${MODES.map(([k, label]) => `<button type="button" data-v="${k}" aria-pressed="${mode === k}">${label}</button>`).join('')}
+    </div>
+    ${needsSize ? `<div class="banner form-block"><p>Add your account size (for example 50000) to see % returns.</p>
+      <a class="btn btn-primary" href="#/settings">Settings</a></div>` : ''}
 
     <div class="cal-grid" role="grid" aria-label="${monthShort(mo)} ${y}">
       ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Week'].map((d) => `<div class="cal-dow">${d}</div>`).join('')}
@@ -131,6 +182,15 @@ export async function render(el, { settings, go, refresh }) {
   pageSwipe(area, content, { onSwipe: (dir) => changeMonth(new Date(y, mo + dir, 1), dir) });
 
   el.onclick = async (e) => {
+    const modeBtn = e.target.closest('[data-mode] [data-v]');
+    if (modeBtn) {
+      if (modeBtn.dataset.v !== mode) {
+        settings.calendarMode = modeBtn.dataset.v;
+        await store.saveSettings(settings);
+        refresh();
+      }
+      return;
+    }
     const nav = e.target.closest('[data-nav]');
     if (nav) {
       const dir = Number(nav.dataset.nav);
