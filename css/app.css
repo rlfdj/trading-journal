@@ -83,6 +83,11 @@ body {
 }
 body.locked { overflow: hidden; }
 
+/* An app, not a document: no text selection or iOS long-press callout while
+   tapping and swiping. Typing fields keep normal selection so you can edit. */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
@@ -738,10 +743,10 @@ button.cal-cell { border-color: var(--line); }
 /* Sideways swipe areas: the page keeps vertical scrolling, we get the rest. */
 .swipe-area { touch-action: pan-y; overflow: hidden; margin: 0 -16px; padding: 0 16px 2px; }
 .swipe-content { transition: transform 0.2s ease-out, opacity 0.2s ease-out; }
-.slide-from-right { animation: slide-from-right 0.22s ease-out; }
-.slide-from-left { animation: slide-from-left 0.22s ease-out; }
-@keyframes slide-from-right { from { transform: translateX(48px); opacity: 0; } }
-@keyframes slide-from-left { from { transform: translateX(-48px); opacity: 0; } }
+.slide-from-right { animation: slide-from-right 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.slide-from-left { animation: slide-from-left 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes slide-from-right { from { transform: translateX(30%); opacity: 0.2; } }
+@keyframes slide-from-left { from { transform: translateX(-30%); opacity: 0.2; } }
 
 .month-pick {
   background: none; border: 0; padding: 0 6px;
