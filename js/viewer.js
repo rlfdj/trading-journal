@@ -156,6 +156,7 @@ export function openViewer(urls, start = 0) {
   stage.addEventListener('pointercancel', up);
 
   v.querySelector('.viewer-close').onclick = close;
+  v.querySelector('.viewer-close').focus({ preventScroll: true });
   v.querySelector('.viewer-prev')?.addEventListener('click', () => show(index - 1));
   v.querySelector('.viewer-next')?.addEventListener('click', () => show(index + 1));
   show(index);

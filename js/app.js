@@ -5,6 +5,7 @@
 //   #/trade/new[?day=YYYY-MM-DD]  #/trade/<id>   (full-screen form over the tabs)
 
 import * as store from './store.js';
+import { setTradingDay } from './calc.js';
 import { icons, toast } from './ui.js';
 import { longPress } from './gestures.js';
 import { initPwa } from './pwa.js';
@@ -52,6 +53,7 @@ async function renderTab(tab, params) {
   const token = ++renderToken;
   currentParams = params;
   const settings = await store.getSettings();
+  setTradingDay(settings.tradingDay);
   if (token !== renderToken) return;
   document.querySelectorAll('.tab').forEach((a) => {
     if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
@@ -77,6 +79,7 @@ async function openOverlay(id, params) {
     document.body.classList.add('locked');
   }
   const settings = await store.getSettings();
+  setTradingDay(settings.tradingDay);
   await tradeForm.render(overlayEl, { id, params, settings, close: closeTradeForm });
 }
 

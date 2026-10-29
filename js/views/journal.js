@@ -3,7 +3,7 @@
 // sortable table on wide screens.
 
 import * as store from '../store.js';
-import { enrich, summarize, inPeriod, periodRange, inRange, dayKey, dailyPnl, round2 } from '../calc.js';
+import { enrich, summarize, inPeriod, periodRange, inRange, dayKey, keyDate, dailyPnl, round2 } from '../calc.js';
 import {
   money, moneyPlain, moneyCompact, pts, signed, rMult, pct, ratio, tone, dayLabel, shortDate, time, monthName, daysAgo, price, esc,
 } from '../format.js';
@@ -35,6 +35,11 @@ const SORTS = {
   r: ['Highest R', (a, b) => (b.m.r ?? -Infinity) - (a.m.r ?? -Infinity)],
 };
 const byDate = () => state.sort === 'new' || state.sort === 'old';
+
+// Long histories render a page at a time so the list stays fast.
+const PAGE = 150;
+let limit = PAGE;
+let limitFor = '';   // filters the current limit applies to; any change starts over
 
 /** Wide screens get the table layout (the sidebar starts earlier, at 960px). */
 export const wideQuery = matchMedia('(min-width: 1100px)');
@@ -160,7 +165,7 @@ export async function render(el, { settings, params, go, refresh }) {
         <button class="icon-btn bare" data-act="hide-backup" aria-label="Remind me later">${icons.close}</button>
       </div>` : ''}
     <section class="hero hero-${tone(month.net)}" aria-label="This month">
-      <div class="hero-top"><span>${monthName(now.getMonth())} net P&amp;L</span>
+      <div class="hero-top"><span>${monthName(keyDate(dayKey(now)).getMonth())} net P&amp;L</span>
         <span>${month.count} trade${month.count === 1 ? '' : 's'}</span></div>
       <div class="hero-net num ${tone(month.net)}">${money(month.net)}</div>
       ${sparkline(monthTrades)}
@@ -216,15 +221,30 @@ export async function render(el, { settings, params, go, refresh }) {
     const summary = summarize(shown);
     const head = `<p class="list-summary"><span>${shown.length} of ${trades.length} trades</span>
       <span class="num ${tone(summary.net)}">${money(summary.net)}</span></p>`;
-    if (wideQuery.matches) { listEl.innerHTML = head + tableHtml(shown); return; }
+
+    const sig = JSON.stringify([state.chip, state.query, state.sort, ...filterKeys(settings).map((k) => state[k])]);
+    if (sig !== limitFor) { limitFor = sig; limit = PAGE; }
+    // A day opened from the Calendar must be on the page.
+    if (pendingDay) {
+      const last = shown.map((t) => dayKey(t.dateTime)).lastIndexOf(pendingDay);
+      if (last >= limit) limit = last + 1;
+    }
+    let n = Math.min(limit, shown.length);
+    // Never cut a day in half when grouped by date.
+    if (byDate()) while (n < shown.length && dayKey(shown[n].dateTime) === dayKey(shown[n - 1].dateTime)) n++;
+    const page = shown.slice(0, n);
+    const rest = shown.length - n;
+    const more = rest ? `<button class="btn btn-soft btn-block show-more" data-act="more">Show ${Math.min(PAGE, rest)} more · ${rest} left</button>` : '';
+
+    if (wideQuery.matches) { listEl.innerHTML = head + tableHtml(page) + more; return; }
     if (!byDate()) {
       // Sorted by result: one flat list, each row shows its date.
-      listEl.innerHTML = `${head}<div class="card trade-list">${shown.map((t) => rowHtml(t, true)).join('')}</div>`;
+      listEl.innerHTML = `${head}<div class="card trade-list">${page.map((t) => rowHtml(t, true)).join('')}</div>${more}`;
       listEl.querySelectorAll('.swipe-row').forEach(swipeRow);
       return;
     }
     const groups = [];
-    for (const t of shown) {
+    for (const t of page) {
       const k = dayKey(t.dateTime);
       if (!groups.length || groups[groups.length - 1].key !== k) groups.push({ key: k, trades: [] });
       groups[groups.length - 1].trades.push(t);
@@ -234,7 +254,7 @@ export async function render(el, { settings, params, go, refresh }) {
         <h2 class="day-head"><span>${dayLabel(g.key)} ${dayWL(g.trades)}</span>
           <span class="num ${tone(dayNet.get(g.key))}">${money(dayNet.get(g.key))}</span></h2>
         <div class="card trade-list">${g.trades.map((t) => rowHtml(t, false)).join('')}</div>
-      </section>`).join('');
+      </section>`).join('') + more;
     if (filtered()) listEl.insertAdjacentHTML('afterbegin', head);
     listEl.querySelectorAll('.swipe-row').forEach(swipeRow);
   }
@@ -344,6 +364,7 @@ export async function render(el, { settings, params, go, refresh }) {
     });
   }
 
+  const pendingDay = params.get('day');
   drawChips();
   drawList();
   // Keyboard: Enter on a table row opens it.
@@ -390,6 +411,11 @@ export async function render(el, { settings, params, go, refresh }) {
       refresh();
     } else if (act === 'backup') {
       if (await exportJsonBackup()) refresh();
+    } else if (act === 'more') {
+      limit += PAGE;
+      const y = window.scrollY;
+      drawList();
+      window.scrollTo(0, y);
     } else if (act === 'clear-filters') {
       state.chip = 'all';
       state.query = '';

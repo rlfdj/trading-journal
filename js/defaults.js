@@ -45,6 +45,7 @@ export function defaultSettings() {
     setups: ['Trend Pullback', 'Disconnect Fade', 'Range Fade'],
     setupDetails: structuredClone(DEFAULT_SETUP_DETAILS),
     mistakes: ['Early entry', 'Oversized', 'Moved stop', 'Chased', 'Cut winner'],
+    tradingDay: 'cme',        // 'cme' = day ends 5 PM New York (futures session) | 'midnight' = device midnight
     accountSize: null,        // starting balance in $, for % returns on the Calendar
     calendarMode: 'pnl',      // what calendar cells show: 'pnl' | 'pct' | 'trades' | 'winrate'
     stopUnit: 'price',        // trade form: stop & target typed as 'price' or 'points'

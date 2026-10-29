@@ -5,7 +5,7 @@
 import * as store from '../store.js';
 import {
   enrich, summarize, equityCurve, maxDrawdown, bestWorstDay, pnlBySetup, costOfMistakes, dailyPnl, pnlByField,
-  pnlByHour, pnlByWeekday, periodRange, inRange, grossAndFees, averageR, streaks, greenDays, largestTrades,
+  pnlByHour, pnlByWeekday, periodRange, inRange, dayKey, keyDate, grossAndFees, averageR, streaks, greenDays, largestTrades,
 } from '../calc.js';
 import { icons } from '../ui.js';
 import { pageSwipe, slideIn } from '../gestures.js';
@@ -13,9 +13,10 @@ import { EMPTY_ART, wideQuery } from './journal.js';
 import { detailsFor } from '../defaults.js';
 import { money, moneyPlain, rMult, pct, ratio, tone, shortDate, monthShort, monthName, esc } from '../format.js';
 
-const PERIODS = [['week', 'Week'], ['month', 'Month'], ['3m', '3M'], ['all', 'All']];
+const PERIODS = [['week', 'Week'], ['month', 'Month'], ['3m', '3M'], ['all', 'All'], ['custom', 'Range']];
 let period = 'month';
 let offset = 0;  // 0 = current period, -1 = the one before …
+let custom = null; // {from, to} day keys, inclusive, for the Range period
 let slideDir = 0;
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const hourLabel = (h) => `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00`;
@@ -73,6 +74,17 @@ function barsHtml(rows, labelOf, valueOf, countOf, extraOf = () => '') {
 }
 
 /** "October 2026", "Week of Oct 19", "Aug – Oct 2026", "All time". */
+/** Range period: from/to day keys → {start, end} (end exclusive). Defaults to this month. */
+function customRange() {
+  if (!custom) {
+    const today = dayKey(new Date());
+    custom = { from: `${today.slice(0, 8)}01`, to: today };
+  }
+  const start = keyDate(custom.from); start.setHours(0, 0, 0, 0);
+  const end = keyDate(custom.to); end.setHours(0, 0, 0, 0); end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 function periodLabel(range) {
   if (!range.start) return 'All time';
   const a = range.start;
@@ -88,7 +100,7 @@ const pair = (a, b) => `<span class="${tone(a)}">${money(a)}</span><span class="
 
 export async function render(el, { settings, refresh }) {
   const all = enrich(await store.listTrades(), settings);
-  const range = periodRange(period, offset);
+  const range = period === 'custom' ? customRange() : periodRange(period, offset);
   const list = inRange(all, range);
   const s = summarize(list);
   const gf = grossAndFees(list);
@@ -114,18 +126,23 @@ export async function render(el, { settings, refresh }) {
       .filter((x) => x.rows.length);
     return { setup, trades, groups };
   }).filter((b) => b.groups.length);
-  const stepping = period !== 'all';
+  const stepping = period !== 'all' && period !== 'custom';
 
   el.innerHTML = `
     <header class="page-head"><h1 class="page-title">Stats</h1></header>
     <div class="segmented" role="group" aria-label="Period length">
       ${PERIODS.map(([k, label]) => `<button type="button" data-period="${k}" aria-pressed="${period === k}">${label}</button>`).join('')}
     </div>
+    ${period === 'custom' ? `
+    <div class="range-row">
+      <label><span>From</span><input class="input" type="date" data-from value="${custom.from}" max="${custom.to}"></label>
+      <label><span>To</span><input class="input" type="date" data-to value="${custom.to}" min="${custom.from}"></label>
+    </div>` : `
     <div class="period-nav">
       ${stepping ? `<button class="icon-btn bare" data-step="-1" aria-label="Previous period">${icons.left}</button>` : '<span></span>'}
       <span class="period-label">${esc(periodLabel(range))}</span>
       ${stepping ? `<button class="icon-btn bare" data-step="1" aria-label="Next period" ${offset >= 0 ? 'disabled' : ''}>${icons.right}</button>` : '<span></span>'}
-    </div>
+    </div>`}
     <div class="swipe-area" data-swipe><div class="swipe-content" data-swipe-content>
     ${!list.length ? `
       <div class="card"><div class="empty">${EMPTY_ART}<strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
@@ -195,7 +212,7 @@ export async function render(el, { settings, refresh }) {
     <section class="card card-pad">
       <h2 class="bars-title">By time of day</h2>
       ${barsHtml(hours, (r) => hourLabel(r.key), (r) => r.net, (r) => r.count, winOf)}
-      <p class="note">Hour of entry, in this device’s time zone.</p>
+      <p class="note">Hour of entry, ${settings.tradingDay === 'midnight' ? 'in this device’s time zone' : 'New York time'}.</p>
     </section>
 
     <section class="card card-pad">
@@ -235,6 +252,17 @@ export async function render(el, { settings, refresh }) {
       shouldStart: (e) => !e.target.closest('[data-curve]'),
     });
   }
+
+  // Range: either date can change; a reversed range is swapped rather than rejected.
+  el.querySelectorAll('[data-from], [data-to]').forEach((input) => {
+    input.onchange = () => {
+      const from = el.querySelector('[data-from]').value;
+      const to = el.querySelector('[data-to]').value;
+      if (!from || !to) return;
+      custom = from <= to ? { from, to } : { from: to, to: from };
+      refresh();
+    };
+  });
 
   el.onclick = (e) => {
     const b = e.target.closest('[data-period]');

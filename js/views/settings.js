@@ -76,6 +76,13 @@ export async function render(el, { settings, refresh }) {
         <label class="grow" for="acct-size">Account size<div class="sub">Starting balance, e.g. 50000 for a 50K account. Used for % on the Calendar.</div></label>
         <input class="input num" id="acct-size" inputmode="decimal" placeholder="Not set" data-money="accountSize" value="${settings.accountSize ? esc(settings.accountSize) : ''}">
       </div>
+      <div class="list-row">
+        <label class="grow" for="trading-day">Trading day ends<div class="sub">Which day a trade counts for on the Calendar, Journal and Stats. Futures prop firms use 5 PM New York.</div></label>
+        <select class="input" id="trading-day" data-trading-day>
+          <option value="cme" ${settings.tradingDay !== 'midnight' ? 'selected' : ''}>5 PM New York</option>
+          <option value="midnight" ${settings.tradingDay === 'midnight' ? 'selected' : ''}>Midnight here</option>
+        </select>
+      </div>
     </div>
 
     ${listCard('setups', settings.setups, settings)}
@@ -147,6 +154,9 @@ export async function render(el, { settings, refresh }) {
     if (!Number.isFinite(v) || v < 0) { toast('Enter a commission like 1.82'); commission.value = settings.commission; return; }
     await save({ commission: v }, `Commission set to ${moneyPlain(v)} per contract`);
   };
+
+  el.querySelector('[data-trading-day]').onchange = (e) => save({ tradingDay: e.target.value },
+    e.target.value === 'midnight' ? 'Days now end at midnight on this device' : 'Days now end at 5 PM New York (CME session)');
 
   el.querySelectorAll('[data-money]').forEach((input) => {
     input.onchange = async () => {
@@ -261,7 +271,7 @@ export async function render(el, { settings, refresh }) {
           <input class="input" data-confirm autocomplete="off" autocapitalize="characters" spellcheck="false">
         </label>
         <button class="btn btn-danger btn-block form-block" data-ok disabled>Delete all trades</button>
-        <button class="btn btn-ghost btn-block" data-cancel>Cancel</button>`;
+        <button class="btn btn-ghost btn-block" data-cancel data-autofocus>Cancel</button>`;
       const input = body.querySelector('[data-confirm]');
       const go = body.querySelector('[data-ok]');
       input.oninput = () => { go.disabled = input.value.trim().toUpperCase() !== 'DELETE'; };

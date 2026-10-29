@@ -179,33 +179,39 @@ export async function render(el, { id, params, settings, close }) {
 
       <div class="result-card form-block" data-result aria-live="polite"></div>
 
-      <div class="card card-pad fees-row form-block">
-        <label class="field-label" for="fees">Fees <small data-fees-hint></small></label>
-        <button type="button" class="link-btn" data-fees-reset hidden>Reset</button>
-        <input class="input num" id="fees" data-fees inputmode="decimal" autocomplete="off" value="${esc(feesText)}">
-      </div>
-
       <p class="section-label">Entry reason</p>
       <div class="chips wrap" data-setups></div>
 
       <div class="setup-details" data-details></div>
-
-      <p class="section-label">Mistakes</p>
-      <div class="chips wrap" data-mistakes></div>
 
       <p class="section-label">Grade</p>
       <div class="segmented grade" role="group" aria-label="Grade" data-grade>
         ${['A', 'B', 'C', 'D'].map((g) => `<button type="button" data-v="${g}">${g}</button>`).join('')}
       </div>
 
-      <p class="section-label">Notes</p>
-      <textarea class="input" data-notes rows="4" placeholder="What did you see? What would you repeat?">${esc(t.notes)}</textarea>
+      <p class="section-label">Mistakes</p>
+      <div class="chips wrap" data-mistakes></div>
 
-      <p class="section-label">Chart</p>
-      <div class="shots" data-shots></div>
-      <label class="btn btn-block file-btn">${icons.camera}<span data-shot-label>Add chart screenshot</span>
-        <input type="file" accept="image/*" multiple data-file aria-label="Add chart screenshot">
-      </label>
+      <!-- Less-used fields stay one tap away; opened automatically when they hold anything. -->
+      <details class="more form-block" data-more ${feesManual || t.notes || (t.screenshotIds || []).length ? 'open' : ''}>
+        <summary><span>Fees, notes &amp; chart</span><span class="more-sum" data-more-sum></span></summary>
+        <div class="more-body">
+          <div class="fees-row">
+            <label class="field-label" for="fees">Fees <small data-fees-hint></small></label>
+            <button type="button" class="link-btn" data-fees-reset hidden>Reset</button>
+            <input class="input num" id="fees" data-fees inputmode="decimal" autocomplete="off" value="${esc(feesText)}">
+          </div>
+
+          <p class="section-label"><label for="notes">Notes</label></p>
+          <textarea class="input" id="notes" data-notes rows="4" placeholder="What did you see? What would you repeat?">${esc(t.notes)}</textarea>
+
+          <p class="section-label">Chart</p>
+          <div class="shots" data-shots></div>
+          <label class="btn btn-block file-btn">${icons.camera}<span data-shot-label>Add chart screenshot</span>
+            <input type="file" accept="image/*" multiple data-file aria-label="Add chart screenshot">
+          </label>
+        </div>
+      </details>
 
       ${existing ? `<div class="btn-grid form-block">
         <button type="button" class="btn" data-duplicate>${icons.copy} Duplicate</button>
@@ -249,10 +255,20 @@ export async function render(el, { id, params, settings, close }) {
       </div>`).join('');
   }
 
+  /** Collapsed summary: "$3.64 fees · notes · 2 charts". */
+  function drawMore() {
+    const fees = toNum(feesText);
+    const bits = [`${moneyPlain(fees ?? 0)} fees`];
+    if (t.notes && t.notes.trim()) bits.push('notes');
+    if (shots.length) bits.push(`${shots.length} chart${shots.length === 1 ? '' : 's'}`);
+    $('[data-more-sum]').textContent = bits.join(' · ');
+  }
+
   function drawFees() {
     const auto = feesFor(settings, t.instrument, t.contracts);
     $('[data-fees-hint]').textContent = feesManual ? `(auto ${moneyPlain(auto)})` : '(auto)';
     $('[data-fees-reset]').hidden = !feesManual;
+    drawMore();
   }
 
   /** Number typed in a field, with shorthand digits filled in from the reference. */
@@ -359,6 +375,7 @@ export async function render(el, { id, params, settings, close }) {
   }
 
   function drawShots() {
+    if ($('[data-more-sum]')) drawMore();
     $('[data-shots]').innerHTML = shots.map((s, i) => `
       <div class="shot">
         ${s.url ? `<img src="${s.url}" alt="Chart screenshot ${i + 1}">` : ''}
@@ -443,7 +460,7 @@ export async function render(el, { id, params, settings, close }) {
     drawFees();
     drawResult();
   };
-  $('[data-notes]').oninput = (e) => { t.notes = e.target.value; };
+  $('[data-notes]').oninput = (e) => { t.notes = e.target.value; drawMore(); };
 
   $('[data-file]').onchange = async (e) => {
     const files = [...e.target.files];
@@ -649,6 +666,11 @@ export async function render(el, { id, params, settings, close }) {
       },
     });
   }
+
+  // Escape cancels (with the unsaved-changes check), unless a sheet is open on top.
+  el.onkeydown = (e) => {
+    if (e.key === 'Escape' && !document.querySelector('.sheet-wrap')) { e.preventDefault(); cancel(); }
+  };
 
   // ------------------------------------------------------------ gestures
 

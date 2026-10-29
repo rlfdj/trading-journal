@@ -3,7 +3,7 @@
 // Cells show $ P&L, % of account, trade count or win rate (shading always follows P&L).
 
 import * as store from '../store.js';
-import { enrich, dailyPnl, dayKey, round2, pctOfAccount } from '../calc.js';
+import { enrich, dailyPnl, dayKey, dateKey, tradingWeekday, round2, pctOfAccount } from '../calc.js';
 import { money, moneyCompact, pct, pctSigned, signed, tone, dayLabel, time, monthShort, monthName, esc } from '../format.js';
 import { icons, sheet } from '../ui.js';
 import { pageSwipe, slideIn } from '../gestures.js';
@@ -58,7 +58,10 @@ export async function render(el, { settings, go, refresh }) {
   const mo = shown.getMonth();
   const monthEnd = new Date(y, mo + 1, 1);
 
-  const trades = enrich(await store.listTrades({ from: shown, to: monthEnd }), settings);
+  // Fetch a little either side: under the CME rule an evening trade can belong to the next day.
+  const ym = `${y}-${String(mo + 1).padStart(2, '0')}`;
+  const trades = enrich(await store.listTrades({ from: new Date(y, mo, -1), to: new Date(y, mo + 1, 2) }), settings)
+    .filter((t) => dayKey(t.dateTime).startsWith(ym));
   const days = new Map(dailyPnl(trades).map((d) => [d.day, d]));
   const mode = MODES.some(([k]) => k === settings.calendarMode) ? settings.calendarMode : 'pnl';
   const needsSize = mode === 'pct' && !(settings.accountSize > 0);
@@ -74,7 +77,7 @@ export async function render(el, { settings, go, refresh }) {
   const up = dayList.filter((d) => d.net > 0).length;
   const down = dayList.filter((d) => d.net < 0).length;
   const maxAbs = Math.max(0, ...dayList.map((d) => Math.abs(d.net)));
-  const hasWeekend = trades.some((t) => [0, 6].includes(new Date(t.dateTime).getDay()));
+  const hasWeekend = trades.some((t) => [0, 6].includes(tradingWeekday(t.dateTime)));
   const todayKey = dayKey(now);
 
   // Default selection: today if it has trades, else the latest trading day this month.
@@ -90,7 +93,7 @@ export async function render(el, { settings, go, refresh }) {
     const week = tally();
     for (let i = 0; i < 7; i++) {
       const d = new Date(wk.getFullYear(), wk.getMonth(), wk.getDate() + i);
-      const k = dayKey(d);
+      const k = dateKey(d);
       const inMonth = d.getMonth() === mo;
       const info = inMonth ? days.get(k) : null;
       if (info) {
@@ -146,7 +149,7 @@ export async function render(el, { settings, go, refresh }) {
     ${needsSize ? `<div class="banner form-block"><p>Add your account size (for example 50000) to see % returns.</p>
       <a class="btn btn-primary" href="#/settings">Settings</a></div>` : ''}
 
-    <div class="cal-grid" role="grid" aria-label="${monthShort(mo)} ${y}">
+    <div class="cal-grid" role="group" aria-label="${monthName(mo)} ${y}">
       ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Week'].map((d) => `<div class="cal-dow">${d}</div>`).join('')}
       ${cells}
     </div>
@@ -225,10 +228,11 @@ function pickMonth(year, month, settings) {
   return sheet('Go to month', (body, close) => {
     let yr = year;
     const draw = async () => {
-      const trades = enrich(await store.listTrades({ from: new Date(yr, 0, 1), to: new Date(yr + 1, 0, 1) }), settings);
+      const trades = enrich(await store.listTrades({ from: new Date(yr, 0, -1), to: new Date(yr + 1, 0, 2) }), settings)
+        .filter((t) => dayKey(t.dateTime).startsWith(`${yr}-`));
       const byMonth = new Map();
       for (const t of trades) {
-        const m = new Date(t.dateTime).getMonth();
+        const m = Number(dayKey(t.dateTime).slice(5, 7)) - 1;
         byMonth.set(m, round2((byMonth.get(m) || 0) + t.m.net));
       }
       body.innerHTML = `

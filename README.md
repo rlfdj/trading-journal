@@ -49,9 +49,9 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 | Screen | What it does |
 | --- | --- |
 | **Journal** | This month's net P&L with a cumulative sparkline, plus today, this week, win rate and profit factor. Filter chips (All, Wins, Losses, each entry reason), search, and a **Filter & sort** sheet (sort by newest, oldest, best/worst P&L or highest R; filter by trend, pullback to, depth, instrument, grade, mistake). Active filters show as removable pills with a count and net for what's shown. On a phone, trades are grouped by day (W/L and net per day, header pinned while scrolling); swipe one left for **Duplicate** or **Delete** (with Undo). On a computer (1100 px+), trades are a sortable table: time, side, entry reason, qty, entry, exit, points, R, fees, net, grade, mistakes. |
-| **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
+| **+** | Log a trade. The result card updates live as you type. Fees, notes and chart screenshots sit in a collapsed **Fees, notes & chart** section (it opens by itself when it holds anything). Long-press + to start from a copy of your last trade. |
 | **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Switch what the days show: **$** P&L, **%** of account size, **Trades** taken or **Win %** (colours always follow P&L). Tap a day to see its trades. Weekend trades count in the week total. |
-| **Stats** | Pick Week / Month / 3M / All, then step back through past periods with ‹ › or a sideways swipe (e.g. last week, September). Net P&L with gross and fees, equity curve (drag along it to read any day), key numbers (win rate, profit factor, expectancy, avg R — only trades with a stop, avg win/loss, largest win/loss, max drawdown, best/worst day, green days, longest win/loss streaks), then breakdowns: entry reason, Trend Pullback details, grade, cost of mistakes, time of day, weekday. |
+| **Stats** | Pick Week / Month / 3M / All / Range (any from–to dates), then step back through past periods with ‹ › or a sideways swipe (e.g. last week, September). Net P&L with gross and fees, equity curve (drag along it to read any day), key numbers (win rate, profit factor, expectancy, avg R — only trades with a stop, avg win/loss, largest win/loss, max drawdown, best/worst day, green days, longest win/loss streaks), then breakdowns: entry reason, Trend Pullback details, grade, cost of mistakes, time of day, weekday. |
 | **Settings** | Instruments, commission, account size, entry reason and mistake lists, backup and restore, sample data, **Delete all trades** (type DELETE to confirm, offers a backup first, Undo for 8 seconds), app version. |
 
 ### Logging faster
@@ -122,8 +122,16 @@ A single `dateTime` column (`2026-10-21 09:42`) works instead of `date` + `time`
 ### Sample data
 Settings → Testing → **Load sample data** adds about 70 fake MNQ trades marked **SAMPLE**, and a banner shows on the Journal while they're loaded. Turning it off removes only the sample trades. Your own trades are never touched.
 
+### Trading days
+Settings → Account → **Trading day ends** decides which day a trade counts for everywhere (Calendar, Journal groups, Stats periods, daily P&L).
+
+- **5 PM New York** (default): the CME futures session, which is how Tradeify counts days. A trade at 6:30 PM New York on Tuesday belongs to Wednesday; Sunday-evening trades belong to Monday. Daylight saving is handled automatically. "By time of day" in Stats uses New York hours, so 09:00 is the open.
+- **Midnight here**: splits days at midnight on your device.
+
+If you trade from outside US Eastern time (for example the Gulf or Asia), the New York close falls after your local midnight, so use the default to keep each session on one day.
+
 ### On a computer
-Above 960 px wide the tab bar becomes a left sidebar with a **Log trade** button. The Journal switches to a table at 1100 px, Stats shows the curve beside the key numbers with breakdowns in two columns, and the Calendar puts the selected day beside the month at 1200 px. Bottom sheets become centred dialogs. Everything works with the keyboard: Tab to move, Enter to open a trade or move to the next number field.
+Above 960 px wide the tab bar becomes a left sidebar with a **Log trade** button. The Journal switches to a table at 1100 px, Stats shows the curve beside the key numbers with breakdowns in two columns, and the Calendar puts the selected day beside the month at 1200 px. Bottom sheets become centred dialogs. Everything works with the keyboard: Tab to move, Enter to open a trade or move to the next number field, Escape to close a sheet or cancel the trade form. The Journal shows 150 trades at a time with **Show more**, so long histories stay fast.
 
 ## File tree
 

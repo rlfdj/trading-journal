@@ -118,13 +118,56 @@ export function summarize(list) {
   };
 }
 
-/** Local calendar day "YYYY-MM-DD" of an ISO timestamp (or Date). */
+// ------------------------------------------------------------ trading days
+//
+// A trade belongs to a "trading day". Two rules:
+//   'cme'      — the CME Globex session: the day ends at 5:00 PM New York time,
+//                so a trade at 6:30 PM ET Tuesday counts for Wednesday (and
+//                Sunday-evening trades count for Monday). Daylight saving is
+//                handled by the time zone database. This is how Tradeify and
+//                other futures prop firms define a day.
+//   'midnight' — midnight on this device.
+let tradingDay = 'cme';
+
+export function setTradingDay(mode) { tradingDay = mode === 'midnight' ? 'midnight' : 'cme'; }
+export function getTradingDay() { return tradingDay; }
+
+/** Plain calendar date "YYYY-MM-DD" of a local Date (no session rule). */
+export function dateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Local Date at noon for a "YYYY-MM-DD" key (noon avoids DST edge cases). */
+export function keyDate(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d, 12);
+}
+
+let nyFormat = null;
+/** {y, m, d, h} of an instant in New York. */
+export function nyParts(d) {
+  nyFormat = nyFormat || new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23',
+  });
+  const p = Object.fromEntries(nyFormat.formatToParts(d).map((x) => [x.type, x.value]));
+  return { y: Number(p.year), m: Number(p.month), d: Number(p.day), h: Number(p.hour) % 24 };
+}
+
+/** Trading day "YYYY-MM-DD" of an ISO timestamp (or Date), under the current rule. */
 export function dayKey(dateTime) {
   const d = dateTime instanceof Date ? dateTime : new Date(dateTime);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  if (tradingDay === 'midnight') return dateKey(d);
+  const p = nyParts(d);
+  // From 5 PM New York the session belongs to the next calendar day.
+  const day = new Date(Date.UTC(p.y, p.m - 1, p.d + (p.h >= 17 ? 1 : 0)));
+  return `${day.getUTCFullYear()}-${String(day.getUTCMonth() + 1).padStart(2, '0')}-${String(day.getUTCDate()).padStart(2, '0')}`;
 }
+
+/** Weekday (0 = Sun) of a trade's trading day. */
+export const tradingWeekday = (dateTime) => keyDate(dayKey(dateTime)).getDay();
+
+/** Hour of entry: New York hour under the CME rule, device hour otherwise. */
+export const entryHour = (dateTime) => (tradingDay === 'cme' ? nyParts(new Date(dateTime)).h : new Date(dateTime).getHours());
 
 const byTime = (a, b) => (a.dateTime < b.dateTime ? -1 : a.dateTime > b.dateTime ? 1 : 0);
 
@@ -229,7 +272,8 @@ export function costOfMistakes(list) {
 
 /** Start of a stats period in local time. Weeks start Monday. null = all time. */
 export function periodStart(period, now = new Date()) {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const d = keyDate(dayKey(now));
+  d.setHours(0, 0, 0, 0);
   switch (period) {
     case 'week': {
       const offset = (d.getDay() + 6) % 7; // Mon = 0
@@ -251,7 +295,9 @@ export function periodStart(period, now = new Date()) {
  * '3m' is the current month plus the two before it, stepping 3 months at a time.
  */
 export function periodRange(period, offset = 0, now = new Date()) {
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Periods are made of trading days, counted from today's trading day.
+  const d = keyDate(dayKey(now));
+  d.setHours(0, 0, 0, 0);
   switch (period) {
     case 'week': {
       const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7) + offset * 7);
@@ -266,10 +312,13 @@ export function periodRange(period, offset = 0, now = new Date()) {
   }
 }
 
+/** Trades whose trading day falls in [start, end). Dates are compared as day keys. */
 export function inRange(list, { start, end }) {
+  const a = start ? dateKey(start) : null;
+  const b = end ? dateKey(end) : null;
   return list.filter((t) => {
-    const d = new Date(t.dateTime);
-    return (!start || d >= start) && (!end || d < end);
+    const k = dayKey(t.dateTime);
+    return (!a || k >= a) && (!b || k < b);
   });
 }
 
@@ -316,7 +365,7 @@ export function largestTrades(list) {
 export function inPeriod(list, period, now = new Date()) {
   const start = periodStart(period, now);
   if (!start) return list;
-  return list.filter((t) => new Date(t.dateTime) >= start);
+  return inRange(list, { start, end: null });
 }
 
 // ------------------------------------------------------------ price entry
@@ -381,14 +430,17 @@ function groupRows(list, keyOf, order) {
   });
 }
 
-/** Net by local hour of entry: [{key: hour 0–23, net, count, wins, losses, winRate}]. */
+/**
+ * Net by hour of entry: [{key: hour 0–23, net, count, wins, losses, winRate}].
+ * New York hours under the CME rule (so 09:00 is the open), device hours otherwise.
+ */
 export function pnlByHour(list) {
-  return groupRows(list, (t) => new Date(t.dateTime).getHours(), [...Array(24).keys()]);
+  return groupRows(list, (t) => entryHour(t.dateTime), [...Array(24).keys()]);
 }
 
-/** Net by local weekday, Monday first: key 1 = Mon … 0 = Sun. */
+/** Net by weekday of the trading day, Monday first: key 1 = Mon … 0 = Sun. */
 export function pnlByWeekday(list) {
-  return groupRows(list, (t) => new Date(t.dateTime).getDay(), [1, 2, 3, 4, 5, 6, 0]);
+  return groupRows(list, (t) => tradingWeekday(t.dateTime), [1, 2, 3, 4, 5, 6, 0]);
 }
 
 /** Net as a % of account size (e.g. 0.19 for +$95 on $50,000). null without a size. */

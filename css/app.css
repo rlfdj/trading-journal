@@ -1075,6 +1075,35 @@ button:disabled { cursor: default; }
   .cal-layout .day-panel { margin-top: 0; position: sticky; top: 24px; }
 }
 
+/* Trade form: collapsible "Fees, notes & chart" */
+.more { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); }
+.more > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 16px;
+  font-weight: 600; font-size: 16px;
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after { content: ''; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: -4px 2px 0 0; transition: transform 0.15s; }
+.more[open] > summary::after { transform: rotate(225deg); margin-top: 4px; }
+.more-sum { flex: 1; text-align: right; font-weight: 400; font-size: 13px; color: var(--muted); font-family: var(--mono); }
+.more-body { padding: 0 16px 16px; border-top: 1px solid var(--line); }
+.more-body .fees-row { padding-top: 14px; }
+
+/* Stats: custom date range */
+.range-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0 2px; }
+.range-row label span { display: block; font-size: 13px; color: var(--muted); margin: 0 0 4px 2px; }
+.range-row .input { min-height: 44px; font-size: 16px; }
+@media (min-width: 960px) { .range-row { max-width: 420px; } .segmented[aria-label="Period length"] { max-width: 520px; } }
+
+.show-more { margin-top: 12px; }
+
+/* Contrast: figures on the strongest calendar shades (measured ≥ 5:1) */
+.cal-cell.n3 .v.neg { color: #8F2C07; }
+@media (prefers-color-scheme: dark) {
+  .cal-cell.n3 .v.neg { color: #FFB794; }
+  .cal-cell.p3 .v.pos { color: #7FE0BA; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

@@ -68,10 +68,28 @@ export function sheet(title, render) {
       </div>`;
     document.body.appendChild(wrap);
     requestAnimationFrame(() => wrap.classList.add('open'));
+    // Keyboard: focus moves into the sheet, Tab stays inside it, Escape closes it,
+    // and focus returns to whatever opened it.
+    const opener = document.activeElement;
+    const panelEl = wrap.querySelector('.sheet');
+    panelEl.tabIndex = -1;
+    const focusables = () => [...panelEl.querySelectorAll('button:not([disabled]), input, select, textarea, a[href]')];
+    setTimeout(() => { if (!panelEl.contains(document.activeElement)) (panelEl.querySelector('[data-autofocus]') || focusables()[0] || panelEl).focus({ preventScroll: true }); }, 60);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(null); return; }
+      if (e.key !== 'Tab') return;
+      const f = focusables();
+      if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    };
+    document.addEventListener('keydown', onKey, true);
     let done = false;
     const close = (value = null) => {
       if (done) return;
       done = true;
+      document.removeEventListener('keydown', onKey, true);
+      if (opener && opener.focus && document.contains(opener)) opener.focus({ preventScroll: true });
       wrap.classList.remove('open');
       setTimeout(() => wrap.remove(), 220);
       resolve(value);
@@ -101,7 +119,7 @@ export function confirmSheet({ title, message = '', confirmLabel = 'Confirm', da
     body.innerHTML = `
       ${message ? `<p class="sheet-msg">${esc(message)}</p>` : ''}
       <button class="btn ${danger ? 'btn-danger' : 'btn-primary'} btn-block" data-ok>${esc(confirmLabel)}</button>
-      <button class="btn btn-ghost btn-block" data-cancel>Cancel</button>`;
+      <button class="btn btn-ghost btn-block" data-cancel ${danger ? 'data-autofocus' : ''}>Cancel</button>`;
     body.querySelector('[data-ok]').onclick = () => close(true);
     body.querySelector('[data-cancel]').onclick = () => close(false);
   }).then((v) => v === true);

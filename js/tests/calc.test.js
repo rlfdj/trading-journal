@@ -326,6 +326,28 @@ export const tests = [
     const big = calc.largestTrades(list);
     eq(big.win.m.net, 30); eq(big.loss.m.net, -20);
   }],
+  ['CME trading day ends at 5 PM New York (DST-aware)', () => {
+    calc.setTradingDay('cme');
+    eq(calc.dayKey('2026-10-21T14:00:00Z'), '2026-10-21', '10:00 ET');
+    eq(calc.dayKey('2026-10-21T20:59:00Z'), '2026-10-21', '16:59 ET');
+    eq(calc.dayKey('2026-10-21T21:00:00Z'), '2026-10-22', '17:00 ET → next day');
+    eq(calc.dayKey('2026-10-22T02:30:00Z'), '2026-10-22', '22:30 ET previous evening');
+    eq(calc.dayKey('2026-12-15T21:30:00Z'), '2026-12-15', '16:30 EST in winter');
+    eq(calc.dayKey('2026-12-15T22:00:00Z'), '2026-12-16', '17:00 EST in winter');
+    eq(calc.dayKey('2026-10-25T22:30:00Z'), '2026-10-26', 'Sunday evening → Monday');
+    eq(calc.dayKey('2026-10-31T03:00:00Z'), '2026-10-31', 'month boundary: Fri 23:00 ET is Oct 31');
+    eq(calc.entryHour('2026-10-21T13:35:00Z'), 9, 'hour in New York');
+    eq(calc.tradingWeekday('2026-10-25T22:30:00Z'), 1, 'Sunday-evening trade is a Monday');
+  }],
+  ['CME days drive daily P&L and periods', () => {
+    calc.setTradingDay('cme');
+    const mk = (iso, n) => { const t = net(n, { dateTime: iso }); return { ...t, m: calc.tradeMetrics(t, MNQ) }; };
+    const list = [mk('2026-10-21T14:00:00Z', 10), mk('2026-10-21T22:00:00Z', 20), mk('2026-10-22T13:40:00Z', -5)];
+    const days = calc.dailyPnl(list);
+    eq(days.map((d) => `${d.day}:${d.net}`).join(), '2026-10-21:10,2026-10-22:15');
+    const r = calc.inRange(list, { start: new Date(2026, 9, 22), end: new Date(2026, 9, 23) });
+    eq(r.length, 2, 'evening trade counted on the 22nd');
+  }],
   ['round2 never returns -0', () => {
     eq(Object.is(calc.round2(-0.001), -0), false);
     eq(calc.round2(1.005 + 0.0000001), 1.01);
@@ -334,7 +356,10 @@ export const tests = [
 
 export function run() {
   return tests.map(([name, fn]) => {
+    // Day-based tests below are written for device-midnight days unless they set CME themselves.
+    calc.setTradingDay('midnight');
     try { fn(); return { name, ok: true }; }
     catch (e) { return { name, ok: false, error: e.message }; }
+    finally { calc.setTradingDay('midnight'); }
   });
 }
