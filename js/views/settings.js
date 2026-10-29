@@ -35,6 +35,15 @@ export async function render(el, { settings, refresh }) {
   el.innerHTML = `
     <header class="page-head"><h1 class="page-title">Settings</h1></header>
 
+    <section class="card app-card">
+      <img src="icons/icon-192.png" alt="" width="56" height="56">
+      <div class="grow">
+        <div class="app-name">Trading Journal</div>
+        <div class="sub">${trades.length} trade${trades.length === 1 ? '' : 's'} · ${last ? `backed up ${daysAgo(last) === 0 ? 'today' : `${daysAgo(last)}d ago`}` : 'not backed up yet'}</div>
+      </div>
+      <span class="ver num">${esc(version ? `v${version}` : 'dev')}</span>
+    </section>
+
     <p class="section-label">Instruments</p>
     <div class="card list">
       ${settings.instruments.map((i, idx) => `
@@ -91,6 +100,12 @@ export async function render(el, { settings, refresh }) {
         <label class="grow" for="sample">Load sample data<div class="sub">Adds about 70 fake MNQ trades marked SAMPLE. Turning it off removes only those.</div></label>
         <label class="switch"><input type="checkbox" id="sample" data-sample ${settings.sampleLoaded ? 'checked' : ''}><span></span></label>
       </div>
+    </div>
+
+    <p class="section-label">Delete data</p>
+    <div class="card card-pad danger-card">
+      <button class="btn btn-block btn-outline-danger" data-act="delete-all" ${trades.length ? '' : 'disabled'}>Delete all trades</button>
+      <p class="note">Removes every trade and screenshot from this phone. Your instruments, commission, entry reasons and mistakes stay.</p>
     </div>
 
     <p class="section-label">About</p>
@@ -206,6 +221,7 @@ export async function render(el, { settings, refresh }) {
       return;
     }
     const act = t.closest('[data-act]')?.dataset.act;
+    if (act === 'delete-all') { await deleteAll(); return; }
     if (act === 'backup') { if (await exportJsonBackup()) refresh(); }
     else if (act === 'csv') await exportCsv();
     else if (act === 'restore') await restore('.json,application/json', importJsonFile, (r) =>
@@ -233,6 +249,45 @@ export async function render(el, { settings, refresh }) {
     } catch (err) {
       toast(err.message);
     }
+  }
+
+  /** Type-to-confirm, offer a backup first, then delete with Undo. */
+  async function deleteAll() {
+    const n = trades.length;
+    const ok = await sheet(`Delete all ${n} trade${n === 1 ? '' : 's'}?`, (body, close) => {
+      body.innerHTML = `
+        <p class="sheet-msg">Every trade and screenshot on this phone will be removed. Back up first if you might want them later.</p>
+        <button class="btn btn-block" data-backup>Back up first</button>
+        <label class="field form-block">
+          <span class="field-label">Type <b>DELETE</b> to confirm</span>
+          <input class="input" data-confirm autocomplete="off" autocapitalize="characters" spellcheck="false">
+        </label>
+        <button class="btn btn-danger btn-block form-block" data-ok disabled>Delete all trades</button>
+        <button class="btn btn-ghost btn-block" data-cancel>Cancel</button>`;
+      const input = body.querySelector('[data-confirm]');
+      const go = body.querySelector('[data-ok]');
+      input.oninput = () => { go.disabled = input.value.trim().toUpperCase() !== 'DELETE'; };
+      body.querySelector('[data-backup]').onclick = async (e) => {
+        if (await exportJsonBackup()) { e.target.textContent = 'Backed up ✓'; e.target.disabled = true; }
+      };
+      go.onclick = () => close(true);
+      body.querySelector('[data-cancel]').onclick = () => close(false);
+    });
+    if (ok !== true) return;
+    const removed = await store.deleteAllTrades();
+    const wasSample = settings.sampleLoaded;
+    if (wasSample) await save({ sampleLoaded: false });
+    refresh();
+    toast(`Deleted ${removed.length} trade${removed.length === 1 ? '' : 's'}`, {
+      action: 'Undo',
+      duration: 8000,
+      onAction: async () => {
+        await store.restoreTrades(removed);
+        if (wasSample) await save({ sampleLoaded: true });
+        toast('Trades restored');
+        refresh();
+      },
+    });
   }
 
   async function renameTag(key, i) {

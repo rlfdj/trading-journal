@@ -52,7 +52,7 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 | **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
 | **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Switch what the days show: **$** P&L, **%** of account size, **Trades** taken or **Win %** (colours always follow P&L). Tap a day to see its trades. Weekend trades count in the week total. |
 | **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
-| **Settings** | Instruments, commission, account size, entry reason and mistake lists, backup and restore, sample data, app version. |
+| **Settings** | Instruments, commission, account size, entry reason and mistake lists, backup and restore, sample data, **Delete all trades** (type DELETE to confirm, offers a backup first, Undo for 8 seconds), app version. |
 
 ### Logging faster
 - **New trades start from your last one**: same instrument, contracts and entry reason. Trend/pullback/depth are left blank on purpose.

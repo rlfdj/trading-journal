@@ -892,6 +892,65 @@ button.cal-cell { border-color: var(--line); }
 
 .tab-plus { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
+/* ------------------------------------------------------------- 1.4 polish */
+
+/* Press feedback everywhere you can tap */
+.btn, .chip, .icon-btn, .tab-plus, .month-btn, .mini-chip, .cal-cell, .row-act { transition: transform 0.12s ease, background-color 0.15s, opacity 0.15s; }
+.btn:active:not(:disabled), .chip:active, .icon-btn:active, .month-btn:active, .mini-chip:active, button.cal-cell:active { transform: scale(0.96); }
+.tab-plus:active { transform: scale(0.92); }
+
+/* Page titles with a quiet subtitle */
+.title-wrap { flex: 1; min-width: 0; }
+.page-sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+/* Hero: soft glow in the result colour + month sparkline */
+.hero { position: relative; overflow: hidden; isolation: isolate; box-shadow: 0 10px 30px rgba(16, 19, 23, 0.12); }
+.hero::before {
+  content: ''; position: absolute; z-index: -1;
+  width: 260px; height: 260px; right: -90px; top: -120px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(126, 227, 189, 0.22), transparent);
+}
+.hero-neg::before { background: radial-gradient(closest-side, rgba(255, 166, 126, 0.22), transparent); }
+.hero-flat::before { display: none; }
+.hero-net { margin-bottom: 6px; }
+.hero-spark { display: block; width: 100%; height: 44px; margin: 0 0 12px; overflow: visible; }
+.spark-zero { stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.spark-line { fill: none; stroke: var(--hero-pos); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.hero-neg .spark-line { stroke: var(--hero-neg); }
+
+/* Trade rows: result accent on the left edge, R multiple under the points */
+.trade-row { position: relative; }
+.trade-row::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: transparent; }
+.trade-row.res-pos::before { background: var(--pos); }
+.trade-row.res-neg::before { background: var(--neg); }
+.trade-r { font-size: 12px; font-weight: 600; margin-top: 2px; opacity: 0.85; }
+.trade-list { box-shadow: 0 1px 2px rgba(16, 19, 23, 0.04); }
+.day-wl { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 6px; letter-spacing: 0.02em; }
+
+/* Tab bar: active tab gets a soft pill behind its icon */
+.tab svg { padding: 3px 14px; box-sizing: content-box; border-radius: 999px; transition: background-color 0.2s; }
+.tab[aria-current="page"] svg { background: var(--soft); }
+.tab-plus { box-shadow: 0 6px 18px rgba(16, 19, 23, 0.28), 0 0 0 4px var(--ground); }
+
+/* Empty-state illustration */
+.empty-art { display: block; width: 120px; height: 72px; margin: 0 auto 16px; }
+
+/* Settings: app card and delete area */
+.app-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.app-card img { border-radius: 13px; flex: none; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
+.app-card .grow { flex: 1; min-width: 0; }
+.app-name { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.app-card .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.app-card .ver { font-size: 12px; color: var(--muted); background: var(--soft); padding: 4px 8px; border-radius: 8px; }
+.danger-card .btn:disabled { opacity: 0.4; }
+
+/* Cards get a whisper of depth in light mode */
+.card { box-shadow: 0 1px 2px rgba(16, 19, 23, 0.04); }
+@media (prefers-color-scheme: dark) {
+  .card, .trade-list { box-shadow: none; }
+  .hero { box-shadow: none; border: 1px solid var(--line); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }

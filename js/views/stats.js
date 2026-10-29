@@ -8,6 +8,7 @@ import {
   pnlByHour, pnlByWeekday,
 } from '../calc.js';
 import { pageSwipe, slideIn } from '../gestures.js';
+import { EMPTY_ART } from './journal.js';
 import { detailsFor } from '../defaults.js';
 import { money, pct, ratio, tone, shortDate, monthShort, fromDayKey, esc } from '../format.js';
 
@@ -54,7 +55,10 @@ function curveSvg(curve, width) {
   return `
     <svg class="equity-svg" viewBox="0 0 ${width} ${H}" width="${width}" height="${H}" role="img"
       aria-label="Equity curve from $0 to ${money(last.equity)}">
-      <path d="${area}" fill="${tint}" />
+      <defs><linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${color}" stop-opacity="0.28"/><stop offset="1" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${area}" fill="url(#eqfill)" />
       <line x1="${padX}" x2="${width - padX}" y1="${zero}" y2="${zero}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 4" opacity="0.6"/>
       <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
       <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last.equity).toFixed(1)}" r="3.6" fill="${color}"/>
@@ -107,7 +111,7 @@ export async function render(el, { settings, refresh }) {
     </div>
     <div class="swipe-area" data-swipe><div class="swipe-content" data-swipe-content>
     ${!list.length ? `
-      <div class="card form-block"><div class="empty"><strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
+      <div class="card form-block"><div class="empty">${EMPTY_ART}<strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
         ${all.length ? 'Swipe or pick a longer period.' : 'Stats appear once you log trades.'}
         ${all.length ? '' : '<a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a>'}</div></div>` : `
     <section class="card equity-card form-block">

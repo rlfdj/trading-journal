@@ -3,7 +3,7 @@
 
 import * as store from '../store.js';
 import { enrich, summarize, inPeriod, dayKey, dailyPnl } from '../calc.js';
-import { money, pts, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
+import { money, pts, rMult, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
 import { icons, sheet, toast } from '../ui.js';
 import { drag } from '../gestures.js';
 import { exportJsonBackup } from '../backup.js';
@@ -35,7 +35,7 @@ export function tradeRowHtml(t, settings) {
   const mistakes = t.mistakes || [];
   const details = detailText(t, settings);
   return `
-    <button class="trade-row" data-id="${esc(t.id)}">
+    <button class="trade-row res-${tone(t.m.net)}" data-id="${esc(t.id)}">
       <div class="trade-main">
         <div class="trade-line1">
           <span class="badge badge-${t.side}">${t.side === 'short' ? 'SHORT' : 'LONG'}</span>
@@ -51,8 +51,54 @@ export function tradeRowHtml(t, settings) {
       <div class="trade-nums">
         <div class="trade-net ${tone(t.m.net)}">${money(t.m.net)}</div>
         <div class="trade-pts">${pts(t.m.points)}</div>
+        ${t.m.r !== null ? `<div class="trade-r num ${tone(t.m.r)}">${rMult(t.m.r)}</div>` : ''}
       </div>
     </button>`;
+}
+
+export const EMPTY_ART = `<svg class="empty-art" viewBox="0 0 120 72" aria-hidden="true">
+  <rect x="1" y="1" width="118" height="70" rx="14" fill="var(--card)" stroke="var(--line)"/>
+  <path d="M14 54 L36 40 L52 46 L74 24 L90 32 L106 16" fill="none" stroke="var(--pos)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="106" cy="16" r="4" fill="var(--pos)"/>
+  <path d="M14 62 H106" stroke="var(--line)" stroke-dasharray="3 4"/>
+</svg>`;
+
+/** "2W 1L" for a day's trades. */
+function dayWL(list) {
+  const w = list.filter((t) => t.m.net > 0).length;
+  const l = list.filter((t) => t.m.net < 0).length;
+  return `<span class="day-wl num">${w}W ${l}L</span>`;
+}
+
+/** Small cumulative-P&L line for the hero card. */
+function sparkline(list) {
+  if (list.length < 2) return '';
+  const sorted = [...list].sort((a, b) => (a.dateTime < b.dateTime ? -1 : 1));
+  let eq = 0;
+  const pts = [0, ...sorted.map((t) => (eq += t.m.net))];
+  const W = 300, H = 44, pad = 3;
+  const min = Math.min(...pts), max = Math.max(...pts), span = max - min || 1;
+  const x = (i) => (i * W) / (pts.length - 1);
+  const y = (v) => pad + (H - pad * 2) * (1 - (v - min) / span);
+  const line = pts.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  return `<svg class="hero-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <line x1="0" x2="${W}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="spark-zero"/>
+    <path d="${line}" class="spark-line" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+/** Animate the hero number up from 0 the first time it's shown this session. */
+let counted = false;
+function countUp(node) {
+  if (!node || counted || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  counted = true;
+  const target = Number(node.dataset.count) || 0;
+  const t0 = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / 650);
+    node.textContent = money(Math.round(target * (1 - (1 - k) ** 3) * 100) / 100);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function matches(t, settings) {
@@ -81,6 +127,7 @@ export async function render(el, { settings, params, go, refresh }) {
   const month = summarize(inPeriod(trades, 'month', now));
   const monthInstruments = [...new Set(inPeriod(trades, 'month', now).map((t) => t.instrument))];
   const dayNet = new Map(dailyPnl(trades).map((d) => [d.day, d.net]));
+  const monthTrades = inPeriod(trades, 'month', now);
   const setups = [...new Set([...settings.setups, ...trades.map((t) => t.setup).filter(Boolean)])];
   if (state.chip.startsWith('setup:') && !setups.includes(state.chip.slice(6))) state.chip = 'all';
 
@@ -89,7 +136,8 @@ export async function render(el, { settings, params, go, refresh }) {
 
   el.innerHTML = `
     <header class="page-head">
-      <h1 class="page-title">Journal</h1>
+      <div class="title-wrap"><h1 class="page-title">Journal</h1>
+        <div class="page-sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div></div>
       <button class="icon-btn" data-act="search" aria-label="Search trades" aria-expanded="${state.searchOpen}">${icons.search}</button>
       <button class="icon-btn" data-act="filter" aria-label="Filter trades">${icons.filter}${filterCount(settings) ? '<span class="dot"></span>' : ''}</button>
     </header>
@@ -106,10 +154,11 @@ export async function render(el, { settings, params, go, refresh }) {
         <button class="btn btn-primary" data-act="backup">Back up</button>
         <button class="icon-btn bare" data-act="hide-backup" aria-label="Remind me later">${icons.close}</button>
       </div>` : ''}
-    <section class="hero" aria-label="This month">
+    <section class="hero hero-${tone(month.net)}" aria-label="This month">
       <div class="hero-top"><span>${monthName(now.getMonth())} · Net P&amp;L</span>
         <span class="num">${esc(monthInstruments.join(' · ') || settings.defaultInstrument)}</span></div>
-      <div class="hero-net num ${tone(month.net)}">${money(month.net)}</div>
+      <div class="hero-net num ${tone(month.net)}" data-count="${month.net}">${money(month.net)}</div>
+      ${sparkline(monthTrades)}
       <div class="hero-stats">
         <div><span>Win rate</span><b>${pct(month.winRate)}</b></div>
         <div><span>Trades</span><b>${month.count}</b></div>
@@ -130,7 +179,7 @@ export async function render(el, { settings, params, go, refresh }) {
 
   function drawList() {
     if (!trades.length) {
-      listEl.innerHTML = `<div class="empty"><strong>No trades yet</strong>Log your first trade, or import a spreadsheet in Settings.
+      listEl.innerHTML = `<div class="empty">${EMPTY_ART}<strong>No trades yet</strong>Log your first trade, or import a spreadsheet in Settings.
         <a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a></div>`;
       return;
     }
@@ -148,7 +197,7 @@ export async function render(el, { settings, params, go, refresh }) {
     }
     listEl.innerHTML = groups.map((g) => `
       <section id="day-${g.key}">
-        <h2 class="day-head"><span>${dayLabel(g.key)}</span>
+        <h2 class="day-head"><span>${dayLabel(g.key)} ${dayWL(g.trades)}</span>
           <span class="num ${tone(dayNet.get(g.key))}">${money(dayNet.get(g.key))}</span></h2>
         <div class="card trade-list">${g.trades.map((t) => `
           <div class="swipe-row" data-row="${esc(t.id)}">
@@ -212,6 +261,7 @@ export async function render(el, { settings, params, go, refresh }) {
 
   drawChips();
   drawList();
+  countUp(el.querySelector('[data-count]'));
 
   const search = el.querySelector('[data-search]');
   if (search) {
