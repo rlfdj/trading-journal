@@ -15,6 +15,10 @@
 //   max drawdown = deepest peak-to-trough fall of the cumulative net equity
 //                  curve (trade by trade, starting from 0)
 //   cost of a mistake = sum of net P&L of losing trades tagged with it
+//   avg R        = mean R multiple of trades that have a stop (others have no R)
+//   streaks      = longest run of consecutive wins / losses in time order;
+//                  a breakeven trade ends both runs
+//   green days   = days with net > 0 ÷ days traded
 
 /** Round to cents, never returning -0. */
 export function round2(x) {
@@ -239,6 +243,74 @@ export function periodStart(period, now = new Date()) {
     default:
       return null;
   }
+}
+
+/**
+ * A stats window: {start, end} (end exclusive) in local time, `offset` periods
+ * back from the current one (0 = current, -1 = previous …). 'all' → nulls.
+ * '3m' is the current month plus the two before it, stepping 3 months at a time.
+ */
+export function periodRange(period, offset = 0, now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  switch (period) {
+    case 'week': {
+      const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7) + offset * 7);
+      return { start, end: new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7) };
+    }
+    case 'month':
+      return { start: new Date(d.getFullYear(), d.getMonth() + offset, 1), end: new Date(d.getFullYear(), d.getMonth() + offset + 1, 1) };
+    case '3m':
+      return { start: new Date(d.getFullYear(), d.getMonth() - 2 + offset * 3, 1), end: new Date(d.getFullYear(), d.getMonth() + 1 + offset * 3, 1) };
+    default:
+      return { start: null, end: null };
+  }
+}
+
+export function inRange(list, { start, end }) {
+  return list.filter((t) => {
+    const d = new Date(t.dateTime);
+    return (!start || d >= start) && (!end || d < end);
+  });
+}
+
+/** Sum of gross P&L and of fees: {gross, fees}. net = gross − fees. */
+export function grossAndFees(list) {
+  let gross = 0, fees = 0;
+  for (const t of list) { gross += t.m.gross; fees += t.m.fees; }
+  return { gross: round2(gross), fees: round2(fees) };
+}
+
+/** Mean R over trades that have a stop: {avg, count} (avg null when none). */
+export function averageR(list) {
+  const rs = list.map((t) => t.m.r).filter((r) => r !== null && Number.isFinite(r));
+  return { avg: rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null, count: rs.length };
+}
+
+/** Longest consecutive wins and losses in time order: {wins, losses}. */
+export function streaks(list) {
+  let w = 0, l = 0, maxW = 0, maxL = 0;
+  for (const t of [...list].sort(byTime)) {
+    if (t.m.net > 0) { w++; l = 0; } else if (t.m.net < 0) { l++; w = 0; } else { w = 0; l = 0; }
+    maxW = Math.max(maxW, w);
+    maxL = Math.max(maxL, l);
+  }
+  return { wins: maxW, losses: maxL };
+}
+
+/** Days with net > 0: {green, days}. */
+export function greenDays(list) {
+  const days = dailyPnl(list);
+  return { green: days.filter((d) => d.net > 0).length, days: days.length };
+}
+
+/** Largest single winning and losing trade (null when none). */
+export function largestTrades(list) {
+  let win = null, loss = null;
+  for (const t of list) {
+    if (t.m.net > 0 && (!win || t.m.net > win.m.net)) win = t;
+    if (t.m.net < 0 && (!loss || t.m.net < loss.m.net)) loss = t;
+  }
+  return { win, loss };
 }
 
 export function inPeriod(list, period, now = new Date()) {

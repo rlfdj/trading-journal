@@ -110,7 +110,7 @@ export async function render(el, { settings, go, refresh }) {
       </button>`;
     }
     const wf = week.count ? figure(mode, week, settings, true) : null;
-    cells += `<div class="cal-cell cal-week"><span class="d">WK</span>${wf
+    cells += `<div class="cal-cell cal-week"><span class="d"></span>${wf
       ? `<span class="v ${wf.cls}">${wf.html || wf.text}</span>` : ''}</div>`;
   }
 
@@ -128,6 +128,7 @@ export async function render(el, { settings, go, refresh }) {
       </div>
     </header>
 
+    <div class="cal-layout"><div class="cal-main">
     <div class="swipe-area" data-swipe>
     <div class="swipe-content" data-swipe-content>
     <section class="card month-sum">
@@ -152,6 +153,7 @@ export async function render(el, { settings, go, refresh }) {
     </div>
     </div>
     ${hasWeekend ? '<p class="note">Weekend trades are counted in the week total.</p>' : ''}
+    </div>
 
     ${selected ? `
     <section class="card day-panel">
@@ -167,7 +169,8 @@ export async function render(el, { settings, go, refresh }) {
         </button>`).join('')}
       <button class="btn btn-soft btn-block" data-log>+ Log a trade on this day</button>
       ${selTrades.length ? '<button class="btn btn-ghost btn-block" data-journal>Open in Journal</button>' : ''}
-    </section>` : ''}`;
+    </section>` : ''}
+    </div>`;
 
   const changeMonth = (target, dir) => {
     shown = target;

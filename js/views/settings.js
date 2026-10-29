@@ -110,10 +110,8 @@ export async function render(el, { settings, refresh }) {
 
     <p class="section-label">About</p>
     <div class="card list">
-      <div class="list-row"><div class="grow">App version</div><span class="num muted" style="padding-right:8px">${esc(version || 'dev (no service worker)')}</span></div>
       <div class="list-row"><div class="grow">Storage
         <div class="sub">${info.persisted === true ? 'Protected from automatic cleanup' : info.persisted === false ? 'Not protected — back up regularly' : 'Protection unknown'}${info.usage != null ? ` · ${(info.usage / 1048576).toFixed(1)} MB used` : ''}</div></div></div>
-      <div class="list-row"><div class="grow">Trades</div><span class="num muted" style="padding-right:8px">${trades.length}</span></div>
       <a class="list-row" href="tests.html"><div class="grow">Run calculation tests</div><span class="muted" style="padding-right:8px">›</span></a>
     </div>`;
 

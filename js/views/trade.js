@@ -207,7 +207,10 @@ export async function render(el, { id, params, settings, close }) {
         <input type="file" accept="image/*" multiple data-file aria-label="Add chart screenshot">
       </label>
 
-      ${existing ? '<button type="button" class="btn btn-block btn-outline-danger form-block" data-delete>Delete trade</button>' : ''}
+      ${existing ? `<div class="btn-grid form-block">
+        <button type="button" class="btn" data-duplicate>${icons.copy} Duplicate</button>
+        <button type="button" class="btn btn-outline-danger" data-delete>${icons.trash} Delete</button>
+      </div>` : ''}
     </div>
     <div class="save-bar"><button class="btn btn-primary btn-block" data-save>Save trade</button></div>`;
 
@@ -398,6 +401,18 @@ export async function render(el, { id, params, settings, close }) {
     const iso = fromLocalInput(e.target.value);
     if (iso) { t.dateTime = iso; drawInstrument(); }
   };
+  // Enter / "next" on the keyboard moves through the number fields in order.
+  const numberFields = [...el.querySelectorAll('[data-price], [data-fees]')];
+  numberFields.forEach((input, i) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const next = numberFields[i + 1];
+      if (next) next.focus(); else input.blur();
+    });
+  });
+  $('[data-fees]').setAttribute('enterkeyhint', 'done');
+
   el.querySelectorAll('[data-price]').forEach((input) => {
     const f = input.dataset.price;
     input.oninput = () => {
@@ -524,6 +539,7 @@ export async function render(el, { id, params, settings, close }) {
     }
     if (target.closest('[data-save]')) { await save(); return; }
     if (target.closest('[data-cancel]')) { await cancel(); return; }
+    if (target.closest('[data-duplicate]')) { await duplicate(); return; }
     if (target.closest('[data-delete]')) await remove_();
   };
 
@@ -610,6 +626,15 @@ export async function render(el, { id, params, settings, close }) {
       if (!discard) return;
     }
     close();
+  }
+
+  /** Open a new trade pre-filled from this one (asks first if there are unsaved edits). */
+  async function duplicate() {
+    if (snapshot() !== initial) {
+      const discard = await confirmSheet({ title: 'Discard changes?', message: 'Your edits to this trade are not saved.', confirmLabel: 'Discard and duplicate', danger: true });
+      if (!discard) return;
+    }
+    location.replace(`#/trade/new?copy=${encodeURIComponent(existing.id)}`);
   }
 
   async function remove_() {

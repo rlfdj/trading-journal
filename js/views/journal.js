@@ -1,9 +1,12 @@
-// Journal (home): month summary, filters, trades grouped by day.
-// Swipe a trade left for Duplicate / Delete (with Undo).
+// Journal (home): month summary, filters, sorting, and the trade list —
+// grouped by day on phones (swipe a trade left for Duplicate / Delete) and a
+// sortable table on wide screens.
 
 import * as store from '../store.js';
-import { enrich, summarize, inPeriod, dayKey, dailyPnl } from '../calc.js';
-import { money, pts, rMult, pct, ratio, tone, dayLabel, time, monthName, daysAgo, esc } from '../format.js';
+import { enrich, summarize, inPeriod, periodRange, inRange, dayKey, dailyPnl, round2 } from '../calc.js';
+import {
+  money, moneyPlain, moneyCompact, pts, signed, rMult, pct, ratio, tone, dayLabel, shortDate, time, monthName, daysAgo, price, esc,
+} from '../format.js';
 import { icons, sheet, toast } from '../ui.js';
 import { drag } from '../gestures.js';
 import { exportJsonBackup } from '../backup.js';
@@ -21,7 +24,23 @@ const state = {
   grade: null,
   mistake: null,
   // plus one key per setup detail (trend, pullbackTo, depth), added as used
+  sort: 'new',          // see SORTS
 };
+
+const SORTS = {
+  new: ['Newest first', (a, b) => (a.dateTime < b.dateTime ? 1 : -1)],
+  old: ['Oldest first', (a, b) => (a.dateTime < b.dateTime ? -1 : 1)],
+  best: ['Best P&L', (a, b) => b.m.net - a.m.net],
+  worst: ['Worst P&L', (a, b) => a.m.net - b.m.net],
+  r: ['Highest R', (a, b) => (b.m.r ?? -Infinity) - (a.m.r ?? -Infinity)],
+};
+const byDate = () => state.sort === 'new' || state.sort === 'old';
+
+/** Wide screens get the table layout (the sidebar starts earlier, at 960px). */
+export const wideQuery = matchMedia('(min-width: 1100px)');
+
+/** "+$98" / "−$1.2k" — whole dollars for tight spaces. */
+const moneyShort = (x) => (x ? `${x > 0 ? '+' : '\u2212'}$${moneyCompact(Math.abs(x)).replace(/^\+/, '')}` : '$0');
 let backupBannerHidden = false;
 const ACTIONS_W = 156; // width of the Duplicate + Delete buttons behind a row
 let openRow = null;    // the row currently swiped open
@@ -31,7 +50,7 @@ export function detailText(t, settings) {
   return detailsFor(settings, t.setup).map((g) => t[g.key]).filter(Boolean).join(' · ');
 }
 
-export function tradeRowHtml(t, settings) {
+export function tradeRowHtml(t, settings, { showDate = false } = {}) {
   const mistakes = t.mistakes || [];
   const details = detailText(t, settings);
   return `
@@ -42,7 +61,7 @@ export function tradeRowHtml(t, settings) {
           <span class="setup">${esc(t.setup || 'No setup')}</span>
         </div>
         <div class="trade-line2">
-          <span class="num">${time(t.dateTime)}</span><span>· ${t.contracts} ${esc(t.instrument)}</span>
+          <span class="num">${showDate ? `${shortDate(t.dateTime)} ` : ''}${time(t.dateTime)}</span><span>· ${t.contracts} ${esc(t.instrument)}</span>
           ${mistakes.length ? `<span class="tag tag-mistake">${esc(mistakes[0])}${mistakes.length > 1 ? ` +${mistakes.length - 1}` : ''}</span>` : ''}
           ${t.sample ? '<span class="tag tag-sample">SAMPLE</span>' : ''}
         </div>
@@ -86,21 +105,6 @@ function sparkline(list) {
     <path d="${line}" class="spark-line" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
-/** Animate the hero number up from 0 the first time it's shown this session. */
-let counted = false;
-function countUp(node) {
-  if (!node || counted || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  counted = true;
-  const target = Number(node.dataset.count) || 0;
-  const t0 = performance.now();
-  const step = (t) => {
-    const k = Math.min(1, (t - t0) / 650);
-    node.textContent = money(Math.round(target * (1 - (1 - k) ** 3) * 100) / 100);
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
 function matches(t, settings) {
   if (state.chip === 'wins' && !(t.m.net > 0)) return false;
   if (state.chip === 'losses' && !(t.m.net < 0)) return false;
@@ -118,14 +122,15 @@ function matches(t, settings) {
   return true;
 }
 
-const filterCount = (settings) => filterKeys(settings).filter((k) => state[k]).length;
+const filterCount = (settings) => filterKeys(settings).filter((k) => state[k]).length + (state.sort !== 'new' ? 1 : 0);
 
 export async function render(el, { settings, params, go, refresh }) {
   const trades = enrich(await store.listTrades(), settings);
   openRow = null;
   const now = new Date();
   const month = summarize(inPeriod(trades, 'month', now));
-  const monthInstruments = [...new Set(inPeriod(trades, 'month', now).map((t) => t.instrument))];
+  const todayNet = round2(trades.filter((t) => dayKey(t.dateTime) === dayKey(now)).reduce((a, t) => a + t.m.net, 0));
+  const weekNet = round2(inRange(trades, periodRange('week', 0, now)).reduce((a, t) => a + t.m.net, 0));
   const dayNet = new Map(dailyPnl(trades).map((d) => [d.day, d.net]));
   const monthTrades = inPeriod(trades, 'month', now);
   const setups = [...new Set([...settings.setups, ...trades.map((t) => t.setup).filter(Boolean)])];
@@ -139,7 +144,7 @@ export async function render(el, { settings, params, go, refresh }) {
       <div class="title-wrap"><h1 class="page-title">Journal</h1>
         <div class="page-sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</div></div>
       <button class="icon-btn" data-act="search" aria-label="Search trades" aria-expanded="${state.searchOpen}">${icons.search}</button>
-      <button class="icon-btn" data-act="filter" aria-label="Filter trades">${icons.filter}${filterCount(settings) ? '<span class="dot"></span>' : ''}</button>
+      <button class="icon-btn" data-act="filter" aria-label="Filter and sort trades">${icons.filter}</button>
     </header>
     ${state.searchOpen ? `
       <div class="search-row">
@@ -155,17 +160,19 @@ export async function render(el, { settings, params, go, refresh }) {
         <button class="icon-btn bare" data-act="hide-backup" aria-label="Remind me later">${icons.close}</button>
       </div>` : ''}
     <section class="hero hero-${tone(month.net)}" aria-label="This month">
-      <div class="hero-top"><span>${monthName(now.getMonth())} · Net P&amp;L</span>
-        <span class="num">${esc(monthInstruments.join(' · ') || settings.defaultInstrument)}</span></div>
-      <div class="hero-net num ${tone(month.net)}" data-count="${month.net}">${money(month.net)}</div>
+      <div class="hero-top"><span>${monthName(now.getMonth())} net P&amp;L</span>
+        <span>${month.count} trade${month.count === 1 ? '' : 's'}</span></div>
+      <div class="hero-net num ${tone(month.net)}">${money(month.net)}</div>
       ${sparkline(monthTrades)}
       <div class="hero-stats">
+        <div><span>Today</span><b class="${tone(todayNet)}">${moneyShort(todayNet)}</b></div>
+        <div><span>This week</span><b class="${tone(weekNet)}">${moneyShort(weekNet)}</b></div>
         <div><span>Win rate</span><b>${pct(month.winRate)}</b></div>
-        <div><span>Trades</span><b>${month.count}</b></div>
         <div><span>Profit factor</span><b>${ratio(month.profitFactor)}</b></div>
       </div>
     </section>
     <div class="chips journal-filters" role="toolbar" aria-label="Show"></div>
+    <div class="active-filters" data-active hidden></div>
     <div data-list></div>`;
 
   const chipsEl = el.querySelector('.journal-filters');
@@ -177,7 +184,23 @@ export async function render(el, { settings, params, go, refresh }) {
       `<button class="chip" data-chip="${esc(k)}" aria-pressed="${state.chip === k}">${esc(label)}</button>`).join('');
   }
 
+  /** One removable pill per active filter, sort and search, plus Clear all. */
+  function drawActive() {
+    const box = el.querySelector('[data-active]');
+    const pills = filterKeys(settings).filter((k) => state[k]).map((k) => [k, k === 'grade' ? `Grade ${state[k]}` : state[k]]);
+    if (state.query.trim()) pills.push(['query', `“${state.query.trim()}”`]);
+    if (state.sort !== 'new') pills.push(['sort', SORTS[state.sort][0]]);
+    box.hidden = !pills.length;
+    const filterBtn = el.querySelector('[data-act="filter"]');
+    filterBtn.querySelector('.dot')?.remove();
+    if (filterCount(settings)) filterBtn.insertAdjacentHTML('beforeend', '<span class="dot"></span>');
+    box.innerHTML = pills.map(([k, label]) =>
+      `<button class="pill" data-unset="${esc(k)}" aria-label="Remove ${esc(label)}">${esc(label)} ${icons.close}</button>`).join('')
+      + (pills.length > 1 ? '<button class="link-btn small" data-act="clear-filters">Clear all</button>' : '');
+  }
+
   function drawList() {
+    drawActive();
     if (!trades.length) {
       listEl.innerHTML = `<div class="empty">${EMPTY_ART}<strong>No trades yet</strong>Log your first trade, or import a spreadsheet in Settings.
         <a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a></div>`;
@@ -187,6 +210,17 @@ export async function render(el, { settings, params, go, refresh }) {
     if (!shown.length) {
       listEl.innerHTML = `<div class="empty"><strong>No matching trades</strong>Try another filter.
         <button class="btn btn-soft empty-cta" data-act="clear-filters">Show all trades</button></div>`;
+      return;
+    }
+    shown.sort(SORTS[state.sort][1]);
+    const summary = summarize(shown);
+    const head = `<p class="list-summary"><span>${shown.length} of ${trades.length} trades</span>
+      <span class="num ${tone(summary.net)}">${money(summary.net)}</span></p>`;
+    if (wideQuery.matches) { listEl.innerHTML = head + tableHtml(shown); return; }
+    if (!byDate()) {
+      // Sorted by result: one flat list, each row shows its date.
+      listEl.innerHTML = `${head}<div class="card trade-list">${shown.map((t) => rowHtml(t, true)).join('')}</div>`;
+      listEl.querySelectorAll('.swipe-row').forEach(swipeRow);
       return;
     }
     const groups = [];
@@ -199,16 +233,67 @@ export async function render(el, { settings, params, go, refresh }) {
       <section id="day-${g.key}">
         <h2 class="day-head"><span>${dayLabel(g.key)} ${dayWL(g.trades)}</span>
           <span class="num ${tone(dayNet.get(g.key))}">${money(dayNet.get(g.key))}</span></h2>
-        <div class="card trade-list">${g.trades.map((t) => `
-          <div class="swipe-row" data-row="${esc(t.id)}">
-            <div class="row-behind">
-              <button type="button" class="row-act" data-dup="${esc(t.id)}">${icons.copy}<span>Duplicate</span></button>
-              <button type="button" class="row-act danger" data-del="${esc(t.id)}">${icons.trash}<span>Delete</span></button>
-            </div>
-            ${tradeRowHtml(t, settings)}
-          </div>`).join('')}</div>
+        <div class="card trade-list">${g.trades.map((t) => rowHtml(t, false)).join('')}</div>
       </section>`).join('');
+    if (filtered()) listEl.insertAdjacentHTML('afterbegin', head);
     listEl.querySelectorAll('.swipe-row').forEach(swipeRow);
+  }
+
+  const filtered = () => state.chip !== 'all' || filterCount(settings) > 0 || state.query.trim();
+
+  function rowHtml(t, showDate) {
+    return `
+      <div class="swipe-row" data-row="${esc(t.id)}">
+        <div class="row-behind">
+          <button type="button" class="row-act" data-dup="${esc(t.id)}" tabindex="-1">${icons.copy}<span>Duplicate</span></button>
+          <button type="button" class="row-act danger" data-del="${esc(t.id)}" tabindex="-1">${icons.trash}<span>Delete</span></button>
+        </div>
+        ${tradeRowHtml(t, settings, { showDate })}
+      </div>`;
+  }
+
+  /** Desktop: dense, sortable table. Day subtotal rows when sorted by date. */
+  function tableHtml(list) {
+    const th = (label, key, cls = '') => {
+      const on = key && (state.sort === key || (key === 'new' && state.sort === 'old'));
+      const next = key === 'new' ? (state.sort === 'new' ? 'old' : 'new') : key;
+      return `<th class="${cls}" ${on ? `aria-sort="${state.sort === 'old' || state.sort === 'worst' ? 'ascending' : 'descending'}"` : ''}>${key
+        ? `<button class="th-sort" data-sort="${next}">${label}${on ? ` <span aria-hidden="true">${state.sort === 'old' ? '↑' : '↓'}</span>` : ''}</button>` : label}</th>`;
+    };
+    let body = '';
+    let lastDay = null;
+    for (const t of list) {
+      const k = dayKey(t.dateTime);
+      if (byDate() && k !== lastDay) {
+        const n = dayNet.get(k);
+        body += `<tr class="day-row"><td colspan="8">${dayLabel(k)} ${dayWL(list.filter((x) => dayKey(x.dateTime) === k))}</td>
+          <td class="opt"></td><td class="r num ${tone(n)}">${money(n)}</td><td class="opt"></td><td></td></tr>`;
+        lastDay = k;
+      }
+      const tick = (settings.instruments.find((i) => i.symbol === t.instrument) || {}).tickSize || 0.25;
+      const details = detailText(t, settings);
+      const mistakes = t.mistakes || [];
+      body += `<tr class="res-${tone(t.m.net)}" data-id="${esc(t.id)}" tabindex="0">
+        <td class="num">${byDate() ? '' : `${shortDate(t.dateTime)} `}${time(t.dateTime)}</td>
+        <td><span class="badge badge-${t.side}">${t.side === 'short' ? 'S' : 'L'}</span></td>
+        <td class="setup-cell">${esc(t.setup || '—')}${details ? `<div class="sub">${esc(details)}</div>` : ''}</td>
+        <td class="r num">${t.contracts}</td>
+        <td class="r num">${price(t.entry, tick)}</td>
+        <td class="r num">${price(t.exit, tick)}</td>
+        <td class="r num ${tone(t.m.points)}">${signed(t.m.points)}</td>
+        <td class="r num ${t.m.r === null ? 'muted' : tone(t.m.r)}">${t.m.r === null ? '—' : rMult(t.m.r)}</td>
+        <td class="r num muted opt">${moneyPlain(t.m.fees)}</td>
+        <td class="r num strong ${tone(t.m.net)}">${money(t.m.net)}</td>
+        <td class="c num opt">${esc(t.grade || '—')}</td>
+        <td class="tags-cell">${mistakes.map((m) => `<span class="tag tag-mistake">${esc(m)}</span>`).join(' ')}${t.sample ? ' <span class="tag tag-sample">SAMPLE</span>' : ''}</td>
+      </tr>`;
+    }
+    return `<div class="card table-wrap"><table class="trade-table">
+      <thead><tr>
+        ${th(byDate() ? 'Time' : 'Date', 'new')}${th('Side')}${th('Entry reason')}${th('Qty', null, 'r')}
+        ${th('Entry', null, 'r')}${th('Exit', null, 'r')}${th('Points', null, 'r')}
+        ${th('R', 'r', 'r')}${th('Fees', null, 'r opt')}${th('Net', state.sort === 'best' ? 'worst' : 'best', 'r')}${th('Grade', null, 'c opt')}${th('Mistakes')}
+      </tr></thead><tbody>${body}</tbody></table></div>`;
   }
 
   function setOffset(row, x, animate = true) {
@@ -261,7 +346,11 @@ export async function render(el, { settings, params, go, refresh }) {
 
   drawChips();
   drawList();
-  countUp(el.querySelector('[data-count]'));
+  // Keyboard: Enter on a table row opens it.
+  el.onkeydown = (e) => {
+    const tr = e.target.closest && e.target.closest('tr[data-id]');
+    if (tr && e.key === 'Enter') go(`#/trade/${tr.dataset.id}`);
+  };
 
   const search = el.querySelector('[data-search]');
   if (search) {
@@ -274,6 +363,17 @@ export async function render(el, { settings, params, go, refresh }) {
     if (dup) { closeOpenRow(); go(`#/trade/new?copy=${encodeURIComponent(dup.dataset.dup)}`); return; }
     const del = e.target.closest('[data-del]');
     if (del) { await removeTrade(del.dataset.del); return; }
+    const sortBtn = e.target.closest('[data-sort]');
+    if (sortBtn) { state.sort = sortBtn.dataset.sort; drawList(); return; }
+    const unset = e.target.closest('[data-unset]');
+    if (unset) {
+      const k = unset.dataset.unset;
+      if (k === 'query') { state.query = ''; state.searchOpen = false; refresh(); return; }
+      if (k === 'sort') state.sort = 'new';
+      else state[k] = null;
+      drawList();
+      return;
+    }
     // A tap anywhere while a row is open just closes it.
     if (closeOpenRow()) return;
     const row = e.target.closest('[data-id]');
@@ -293,6 +393,7 @@ export async function render(el, { settings, params, go, refresh }) {
     } else if (act === 'clear-filters') {
       state.chip = 'all';
       state.query = '';
+      state.sort = 'new';
       filterKeys(settings).forEach((k) => { state[k] = null; });
       refresh();
     } else if (act === 'hide-backup') {
@@ -317,9 +418,12 @@ function openFilters(settings, trades) {
       <button class="chip" data-k="${key}" data-v="" aria-pressed="${!state[key]}">Any</button>
       ${options.map((o) => `<button class="chip" data-k="${key}" data-v="${esc(o)}" aria-pressed="${state[key] === o}">${esc(o)}</button>`).join('')}
     </div>`;
-  return sheet('Filter trades', (body, close) => {
+  return sheet('Filter & sort', (body, close) => {
     const draw = () => {
       body.innerHTML = `
+        <p class="section-label">Sort</p>
+        <div class="chips wrap">${Object.entries(SORTS).map(([k, [label]]) =>
+          `<button class="chip" data-sortk="${k}" aria-pressed="${state.sort === k}">${label}</button>`).join('')}</div>
         ${instruments.length > 1 ? group('Instrument', 'instrument', instruments) : ''}
         ${allDetails(settings).map((g) => group(esc(g.label), g.key, g.options)).join('')}
         ${group('Grade', 'grade', ['A', 'B', 'C', 'D'])}
@@ -330,9 +434,11 @@ function openFilters(settings, trades) {
     };
     draw();
     body.onclick = (e) => {
+      const sk = e.target.closest('[data-sortk]');
+      if (sk) { state.sort = sk.dataset.sortk; draw(); return; }
       const chip = e.target.closest('[data-k]');
       if (chip) { state[chip.dataset.k] = chip.dataset.v || null; draw(); return; }
-      if (e.target.closest('[data-clear]')) { filterKeys(settings).forEach((k) => { state[k] = null; }); close(); }
+      if (e.target.closest('[data-clear]')) { filterKeys(settings).forEach((k) => { state[k] = null; }); state.sort = 'new'; close(); }
       if (e.target.closest('[data-done]')) close();
     };
   });

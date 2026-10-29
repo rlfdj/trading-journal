@@ -27,6 +27,8 @@ function net(n, o = {}) {
 }
 const at = (day, hh = 10, mm = 0) => new Date(2026, 9, day, hh, mm).toISOString();
 
+const round2sum = (list) => calc.round2(list.reduce((a, t) => a + t.m.net, 0));
+
 function eq(actual, expected, msg = '') {
   if (!Object.is(actual, expected) && !(actual === expected)) {
     throw new Error(`${msg} expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
@@ -292,6 +294,37 @@ export const tests = [
     eq(calc.pctOfAccount(95, 50000), 0.19);
     eq(calc.pctOfAccount(-250, 50000), -0.5);
     eq(calc.pctOfAccount(95, null), null);
+  }],
+  ['period ranges step back by week, month and quarter', () => {
+    const now = new Date(2026, 9, 29, 12); // Thu Oct 29 2026
+    const k = (r) => `${calc.dayKey(r.start)}..${calc.dayKey(r.end)}`;
+    eq(k(calc.periodRange('week', 0, now)), '2026-10-26..2026-11-02');
+    eq(k(calc.periodRange('week', -1, now)), '2026-10-19..2026-10-26');
+    eq(k(calc.periodRange('month', 0, now)), '2026-10-01..2026-11-01');
+    eq(k(calc.periodRange('month', -10, now)), '2025-12-01..2026-01-01', 'crosses the year');
+    eq(k(calc.periodRange('3m', 0, now)), '2026-08-01..2026-11-01');
+    eq(k(calc.periodRange('3m', -1, now)), '2026-05-01..2026-08-01');
+    eq(calc.periodRange('all', 0, now).start, null);
+  }],
+  ['gross, fees, avg R, streaks, green days, largest trades', () => {
+    const mk = (day, n, o = {}) => {
+      const t = net(n, { dateTime: new Date(2026, 9, day, 10, Math.round(Math.random() * 50)).toISOString(), ...o });
+      return { ...t, m: calc.tradeMetrics(t, MNQ) };
+    };
+    const list = [
+      mk(1, 20, { fees: 2, exit: 111, stop: 95 }),  // gross 22, fees 2, R = 11/5
+      mk(2, 10), mk(3, 30), mk(4, -10), mk(5, -5), mk(6, -5), mk(7, 0), mk(8, -20),
+    ];
+    const gf = calc.grossAndFees(list);
+    eq(gf.fees, 2); eq(gf.gross, round2sum(list) + 2);
+    const r = calc.averageR(list);
+    eq(r.count, 1); near(r.avg, 11 / 5);
+    const s = calc.streaks(list);
+    eq(s.wins, 3); eq(s.losses, 3);
+    const g = calc.greenDays(list);
+    eq(g.green, 3); eq(g.days, 8);
+    const big = calc.largestTrades(list);
+    eq(big.win.m.net, 30); eq(big.loss.m.net, -20);
   }],
   ['round2 never returns -0', () => {
     eq(Object.is(calc.round2(-0.001), -0), false);

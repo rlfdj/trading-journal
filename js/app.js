@@ -13,6 +13,7 @@ import * as calendar from './views/calendar.js';
 import * as stats from './views/stats.js';
 import * as settingsView from './views/settings.js';
 import * as tradeForm from './views/trade.js';
+import { wideQuery } from './views/journal.js';
 
 const views = { journal, calendar, stats, settings: settingsView };
 
@@ -24,6 +25,7 @@ let overlayOpen = false;
 let savedScroll = 0;
 let routedInApp = false;    // true once we've handled a hash change in this session
 let renderToken = 0;
+let currentParams = new URLSearchParams();
 
 document.querySelectorAll('[data-icon]').forEach((el) => { el.outerHTML = icons[el.dataset.icon]; });
 
@@ -48,6 +50,7 @@ export function go(hash, { replace = false } = {}) {
 
 async function renderTab(tab, params) {
   const token = ++renderToken;
+  currentParams = params;
   const settings = await store.getSettings();
   if (token !== renderToken) return;
   document.querySelectorAll('.tab').forEach((a) => {
@@ -126,6 +129,9 @@ async function route() {
   if (wasOverlay && sameTab) window.scrollTo(0, savedScroll);
   else if (!params.get('day')) window.scrollTo(0, 0);
 }
+
+// Crossing the desktop breakpoint switches layouts (e.g. Journal list ↔ table).
+wideQuery.addEventListener('change', () => { if (currentTab) renderTab(currentTab, currentParams).catch(showError); });
 
 window.addEventListener('hashchange', () => {
   routedInApp = true;

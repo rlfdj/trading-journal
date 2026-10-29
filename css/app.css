@@ -896,22 +896,13 @@ button.cal-cell { border-color: var(--line); }
 
 /* Press feedback everywhere you can tap */
 .btn, .chip, .icon-btn, .tab-plus, .month-btn, .mini-chip, .cal-cell, .row-act { transition: transform 0.12s ease, background-color 0.15s, opacity 0.15s; }
-.btn:active:not(:disabled), .chip:active, .icon-btn:active, .month-btn:active, .mini-chip:active, button.cal-cell:active { transform: scale(0.96); }
+.btn:active:not(:disabled), .chip:active, .icon-btn:active, .month-btn:active, .mini-chip:active, button.cal-cell:active { transform: scale(0.97); }
 .tab-plus:active { transform: scale(0.92); }
 
 /* Page titles with a quiet subtitle */
 .title-wrap { flex: 1; min-width: 0; }
 .page-sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
 
-/* Hero: soft glow in the result colour + month sparkline */
-.hero { position: relative; overflow: hidden; isolation: isolate; box-shadow: 0 10px 30px rgba(16, 19, 23, 0.12); }
-.hero::before {
-  content: ''; position: absolute; z-index: -1;
-  width: 260px; height: 260px; right: -90px; top: -120px; border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(126, 227, 189, 0.22), transparent);
-}
-.hero-neg::before { background: radial-gradient(closest-side, rgba(255, 166, 126, 0.22), transparent); }
-.hero-flat::before { display: none; }
 .hero-net { margin-bottom: 6px; }
 .hero-spark { display: block; width: 100%; height: 44px; margin: 0 0 12px; overflow: visible; }
 .spark-zero { stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
@@ -930,7 +921,6 @@ button.cal-cell { border-color: var(--line); }
 /* Tab bar: active tab gets a soft pill behind its icon */
 .tab svg { padding: 3px 14px; box-sizing: content-box; border-radius: 999px; transition: background-color 0.2s; }
 .tab[aria-current="page"] svg { background: var(--soft); }
-.tab-plus { box-shadow: 0 6px 18px rgba(16, 19, 23, 0.28), 0 0 0 4px var(--ground); }
 
 /* Empty-state illustration */
 .empty-art { display: block; width: 120px; height: 72px; margin: 0 auto 16px; }
@@ -948,7 +938,141 @@ button.cal-cell { border-color: var(--line); }
 .card { box-shadow: 0 1px 2px rgba(16, 19, 23, 0.04); }
 @media (prefers-color-scheme: dark) {
   .card, .trade-list { box-shadow: none; }
-  .hero { box-shadow: none; border: 1px solid var(--line); }
+  .hero { border: 1px solid var(--line); }
+}
+
+/* ------------------------------------------------------------- 1.5 system */
+
+/* Visible keyboard focus on everything interactive */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 6px; }
+.input:focus-visible { outline: none; }
+button:disabled { cursor: default; }
+
+/* Journal hero: four figures — today, week, win rate, profit factor */
+.hero-stats { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.hero-stats b { font-size: 15px; }
+.hero-top span:last-child { font-variant-numeric: tabular-nums; }
+
+/* Active filters, sort and search shown as removable pills */
+.active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.active-filters[hidden] { display: none; }
+.pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  min-height: 32px; padding: 0 8px 0 12px; border-radius: 999px;
+  border: 0; background: var(--ink); color: var(--ground);
+  font-size: 13px; font-weight: 600;
+}
+.pill svg { width: 14px; height: 14px; }
+.link-btn.small { font-size: 13px; min-height: 32px; color: var(--muted); font-weight: 600; }
+.list-summary { display: flex; justify-content: space-between; margin: 14px 4px 2px; font-size: 13px; color: var(--muted); }
+.list-summary .num { font-weight: 600; font-size: 14px; }
+.trade-row.res-flat::before { background: var(--muted); opacity: 0.5; }
+
+/* Stats: period stepper */
+.period-nav { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; margin: 6px 0 2px; }
+.period-label { text-align: center; font-weight: 700; font-size: 16px; }
+.period-nav .icon-btn:disabled { opacity: 0.25; }
+.equity-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.equity-days { padding-bottom: 8px; font-size: 13px; }
+
+/* Stats: key numbers as one panel with dividers instead of ten separate cards */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0; margin-top: 12px; overflow: hidden; }
+.tiles .tile { min-height: 0; padding: 12px 14px; border-top: 1px solid var(--line); }
+.tiles .tile:nth-child(-n+2) { border-top: 0; }
+.tiles .tile:nth-child(odd) { border-right: 1px solid var(--line); }
+.tile .label { font-size: 13px; }
+.tile .big { font-size: 20px; margin-top: 4px; }
+.tile .big.two { font-size: 15px; line-height: 1.4; }
+.tile .big.two span { display: block; }
+.tile .sub { font-size: 12px; }
+.stats-sections > .card, .stats-top + .stats-sections > .card:first-child { margin-top: 12px; }
+
+/* Desktop trade table (only rendered at ≥ 960px) */
+.table-wrap { margin-top: 8px; }
+.trade-table .tags-cell { white-space: normal; }
+.trade-table .tags-cell .tag { margin: 1px 0; }
+@media (max-width: 1279px) { .trade-table .opt { display: none; } }
+.trade-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.trade-table th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--card); text-align: left; white-space: nowrap;
+  font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 0.02em;
+  padding: 10px 8px; border-bottom: 1px solid var(--line);
+}
+.trade-table td { padding: 9px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.trade-table .r { text-align: right; }
+.trade-table .c { text-align: center; }
+.trade-table td.num { font-size: 13.5px; }
+.trade-table td.strong { font-weight: 700; }
+.trade-table .setup-cell { white-space: normal; min-width: 150px; font-weight: 600; }
+.trade-table .setup-cell .sub { font-weight: 400; font-size: 12px; color: var(--muted); margin-top: 1px; }
+.trade-table tbody tr[data-id] { cursor: pointer; }
+.trade-table tbody tr[data-id]:hover { background: var(--soft); }
+.trade-table tbody tr.res-pos td:first-child { box-shadow: inset 3px 0 0 var(--pos); }
+.trade-table tbody tr.res-neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
+.trade-table .day-row td { background: var(--ground); font-weight: 700; font-size: 13px; padding-top: 14px; }
+.trade-table .badge { height: 22px; font-size: 11px; }
+.th-sort { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.th-sort:hover { color: var(--ink); }
+
+.tab-plus-label { display: none; }
+
+@media (min-width: 960px) {
+  :root { --side: 232px; }
+  .view { max-width: 1240px; margin: 0 0 0 var(--side); padding: 32px 40px 48px; }
+
+  /* Bottom tab bar becomes a left sidebar */
+  .tabbar {
+    top: 0; right: auto; width: var(--side); height: auto;
+    flex-direction: column; justify-content: flex-start; align-items: stretch; gap: 2px;
+    padding: calc(var(--safe-top) + 24px) 14px 24px;
+    border-top: 0; border-right: 1px solid var(--line);
+    background: var(--card); backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .tab { flex: none; flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 0 12px; border-radius: 12px; font-size: 15px; }
+  .tab svg { padding: 0; background: none !important; }
+  .tab:hover { background: var(--soft); color: var(--ink); }
+  .tab[aria-current="page"] { background: var(--soft); }
+  .tab-plus {
+    order: -1; width: auto; height: 46px; margin: 0 0 18px; border-radius: 12px;
+    display: flex; gap: 8px; justify-content: center; text-decoration: none; font-weight: 700; font-size: 15px;
+  }
+  .tab-plus svg { width: 20px; height: 20px; }
+  .tab-plus-label { display: inline; }
+  .toast { bottom: 24px; left: calc(50% + var(--side) / 2); }
+
+  /* Journal: header filters inline, table below */
+  .journal-filters { margin: 16px 0 0; padding: 2px 0; flex-wrap: wrap; overflow: visible; }
+  .hero { padding: 20px 24px; }
+  .hero-stats { max-width: 640px; }
+
+  /* Stats: curve beside the key numbers; breakdowns in two columns */
+  .stats-top { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; margin-top: 12px; }
+  .stats-top > .card, .stats-top .tiles { margin-top: 0; }
+  .stats-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; align-items: start; }
+  .stats-sections > .card, .stats-top + .stats-sections > .card:first-child { margin-top: 0; }
+  .segmented[aria-label="Period length"] { max-width: 420px; }
+  .period-nav { max-width: 420px; }
+  .swipe-area { margin: 0; padding: 0; }
+
+  .cal-cell { min-height: 84px; }
+
+  /* Settings stays a readable column */
+  .view:has(.app-card) > * { max-width: 640px; }
+
+  /* Trade form and sheets: centred column over a dimmed page */
+  .overlay { left: var(--side); }
+  .save-bar { left: var(--side); }
+  .sheet { bottom: auto; top: 50%; border-radius: 22px; transform: translateY(-40%); opacity: 0; transition: transform 0.2s ease-out, opacity 0.2s; max-width: 520px; }
+  .sheet-wrap.open .sheet { transform: translateY(-50%); opacity: 1; }
+  .sheet-grip { display: none; }
+}
+
+/* Calendar: month grid beside the selected day once there's room for both */
+@media (min-width: 1200px) {
+  .cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .cal-layout .day-panel { margin-top: 0; position: sticky; top: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

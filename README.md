@@ -48,10 +48,10 @@ If you forget to bump `VERSION`, phones keep running the cached old version.
 
 | Screen | What it does |
 | --- | --- |
-| **Journal** | This month's net P&L, win rate, trade count and profit factor. Filter chips (All, Wins, Losses, each entry reason), search, and a filter sheet (trend, pullback to, depth, instrument, grade, mistake). Trades are grouped by day, newest first, and the day header stays pinned while you scroll. Tap a trade to edit it; swipe it left for **Duplicate** and **Delete** (with Undo). |
+| **Journal** | This month's net P&L with a cumulative sparkline, plus today, this week, win rate and profit factor. Filter chips (All, Wins, Losses, each entry reason), search, and a **Filter & sort** sheet (sort by newest, oldest, best/worst P&L or highest R; filter by trend, pullback to, depth, instrument, grade, mistake). Active filters show as removable pills with a count and net for what's shown. On a phone, trades are grouped by day (W/L and net per day, header pinned while scrolling); swipe one left for **Duplicate** or **Delete** (with Undo). On a computer (1100 px+), trades are a sortable table: time, side, entry reason, qty, entry, exit, points, R, fees, net, grade, mistakes. |
 | **+** | Log a trade. The result card updates live as you type. Long-press + to start from a copy of your last trade. |
 | **Calendar** | Month grid, Mon–Fri plus a weekly total. Days are shaded by result. Swipe sideways to change month, or tap the month name to jump to any month (each shows its net). Switch what the days show: **$** P&L, **%** of account size, **Trades** taken or **Win %** (colours always follow P&L). Tap a day to see its trades. Weekend trades count in the week total. |
-| **Stats** | Week / Month / 3M / All (tap, or swipe the page sideways). Equity curve (drag along it to read any day), six stat tiles, P&L by entry reason, by time of day and by weekday, a Trend Pullback breakdown (P&L and win rate by trend, pullback to and depth), and cost of mistakes. |
+| **Stats** | Pick Week / Month / 3M / All, then step back through past periods with ‹ › or a sideways swipe (e.g. last week, September). Net P&L with gross and fees, equity curve (drag along it to read any day), key numbers (win rate, profit factor, expectancy, avg R — only trades with a stop, avg win/loss, largest win/loss, max drawdown, best/worst day, green days, longest win/loss streaks), then breakdowns: entry reason, Trend Pullback details, grade, cost of mistakes, time of day, weekday. |
 | **Settings** | Instruments, commission, account size, entry reason and mistake lists, backup and restore, sample data, **Delete all trades** (type DELETE to confirm, offers a backup first, Undo for 8 seconds), app version. |
 
 ### Logging faster
@@ -121,6 +121,9 @@ A single `dateTime` column (`2026-10-21 09:42`) works instead of `date` + `time`
 
 ### Sample data
 Settings → Testing → **Load sample data** adds about 70 fake MNQ trades marked **SAMPLE**, and a banner shows on the Journal while they're loaded. Turning it off removes only the sample trades. Your own trades are never touched.
+
+### On a computer
+Above 960 px wide the tab bar becomes a left sidebar with a **Log trade** button. The Journal switches to a table at 1100 px, Stats shows the curve beside the key numbers with breakdowns in two columns, and the Calendar puts the selected day beside the month at 1200 px. Bottom sheets become centred dialogs. Everything works with the keyboard: Tab to move, Enter to open a trade or move to the next number field.
 
 ## File tree
 

@@ -1,19 +1,21 @@
-// Stats: period switcher, equity curve, stat tiles, P&L by setup, by time of
-// day and weekday, cost of mistakes. Swipe sideways to change period; drag
-// along the curve to read the balance on any day.
+// Stats: pick a period length (week / month / 3M / all) and step back through
+// past periods with the arrows or a sideways swipe. Equity curve (drag along it
+// to read any day), key numbers, then breakdowns: strategy → execution → timing.
 
 import * as store from '../store.js';
 import {
-  enrich, inPeriod, summarize, equityCurve, maxDrawdown, bestWorstDay, pnlBySetup, costOfMistakes, dailyPnl, pnlByField,
-  pnlByHour, pnlByWeekday,
+  enrich, summarize, equityCurve, maxDrawdown, bestWorstDay, pnlBySetup, costOfMistakes, dailyPnl, pnlByField,
+  pnlByHour, pnlByWeekday, periodRange, inRange, grossAndFees, averageR, streaks, greenDays, largestTrades,
 } from '../calc.js';
+import { icons } from '../ui.js';
 import { pageSwipe, slideIn } from '../gestures.js';
-import { EMPTY_ART } from './journal.js';
+import { EMPTY_ART, wideQuery } from './journal.js';
 import { detailsFor } from '../defaults.js';
-import { money, pct, ratio, tone, shortDate, monthShort, fromDayKey, esc } from '../format.js';
+import { money, moneyPlain, rMult, pct, ratio, tone, shortDate, monthShort, monthName, esc } from '../format.js';
 
 const PERIODS = [['week', 'Week'], ['month', 'Month'], ['3m', '3M'], ['all', 'All']];
 let period = 'month';
+let offset = 0;  // 0 = current period, -1 = the one before …
 let slideDir = 0;
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const hourLabel = (h) => `${String(h).padStart(2, '0')}:00–${String((h + 1) % 24).padStart(2, '0')}:00`;
@@ -21,23 +23,11 @@ const hourLabel = (h) => `${String(h).padStart(2, '0')}:00–${String((h + 1) % 
 const winOf = (r) => (r.winRate === null ? '' : ` · ${pct(r.winRate)} win`);
 const dollars = (x) => `$${Math.round(Math.abs(x)).toLocaleString('en-US')}`;
 
-function rangeLabel(days) {
-  if (!days.length) return '';
-  const a = fromDayKey(days[0].day);
-  const b = fromDayKey(days[days.length - 1].day);
-  if (days.length === 1) return shortDate(days[0].day);
-  if (a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()) {
-    return `${monthShort(a.getMonth())} ${a.getDate()}–${b.getDate()}`;
-  }
-  const yr = a.getFullYear() !== b.getFullYear();
-  return `${shortDate(days[0].day)}${yr ? ` ’${String(a.getFullYear()).slice(2)}` : ''} – ${shortDate(days[days.length - 1].day)}${yr ? ` ’${String(b.getFullYear()).slice(2)}` : ''}`;
-}
-
 let geometry = null; // last drawn curve, for scrubbing
 
 /** Equity curve as inline SVG sized to the card. */
-function curveSvg(curve, width) {
-  const H = 150, padY = 8, padX = 4;
+function curveSvg(curve, width, H = 150) {
+  const padY = 8, padX = 4;
   const pts = [{ day: null, equity: 0 }, ...curve];
   const vals = pts.map((p) => p.equity);
   const min = Math.min(0, ...vals);
@@ -82,20 +72,41 @@ function barsHtml(rows, labelOf, valueOf, countOf, extraOf = () => '') {
   }).join('');
 }
 
+/** "October 2026", "Week of Oct 19", "Aug – Oct 2026", "All time". */
+function periodLabel(range) {
+  if (!range.start) return 'All time';
+  const a = range.start;
+  const last = new Date(range.end.getFullYear(), range.end.getMonth(), range.end.getDate() - 1);
+  if (period === 'week') return offset === 0 ? 'This week' : offset === -1 ? 'Last week' : `Week of ${shortDate(a)}`;
+  if (period === 'month') return `${monthName(a.getMonth())} ${a.getFullYear()}`;
+  return `${monthShort(a.getMonth())}${a.getFullYear() !== last.getFullYear() ? ` ${a.getFullYear()}` : ''} – ${monthShort(last.getMonth())} ${last.getFullYear()}`;
+}
+
+const tile = (label, value, sub = '', cls = '') => `
+  <div class="tile"><div class="label">${label}</div><div class="big ${cls}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+const pair = (a, b) => `<span class="${tone(a)}">${money(a)}</span><span class="${tone(b)}">${money(b)}</span>`;
+
 export async function render(el, { settings, refresh }) {
   const all = enrich(await store.listTrades(), settings);
-  const list = inPeriod(all, period);
+  const range = periodRange(period, offset);
+  const list = inRange(all, range);
   const s = summarize(list);
-  const hours = pnlByHour(list);
-  const weekdays = pnlByWeekday(list);
+  const gf = grossAndFees(list);
+  const ar = averageR(list);
+  const st = streaks(list);
+  const gd = greenDays(list);
+  const big = largestTrades(list);
   const days = dailyPnl(list);
   const curve = equityCurve(list);
   const dd = maxDrawdown(list);
   const bw = bestWorstDay(list);
   const setups = pnlBySetup(list);
+  const grades = pnlByField(list, 'grade', ['A', 'B', 'C', 'D']);
   const mistakes = costOfMistakes(list);
   const mistakeTotal = mistakes.reduce((a, m) => a + m.cost, 0);
-  // One breakdown card per setup that has details (Trend Pullback).
+  const hours = pnlByHour(list);
+  const weekdays = pnlByWeekday(list);
+  // One breakdown per setup that has details (Trend Pullback).
   const breakdowns = Object.keys(settings.setupDetails || {}).map((setup) => {
     const trades = list.filter((t) => t.setup === setup);
     const groups = detailsFor(settings, setup)
@@ -103,26 +114,34 @@ export async function render(el, { settings, refresh }) {
       .filter((x) => x.rows.length);
     return { setup, trades, groups };
   }).filter((b) => b.groups.length);
+  const stepping = period !== 'all';
 
   el.innerHTML = `
     <header class="page-head"><h1 class="page-title">Stats</h1></header>
-    <div class="segmented" role="group" aria-label="Period">
+    <div class="segmented" role="group" aria-label="Period length">
       ${PERIODS.map(([k, label]) => `<button type="button" data-period="${k}" aria-pressed="${period === k}">${label}</button>`).join('')}
+    </div>
+    <div class="period-nav">
+      ${stepping ? `<button class="icon-btn bare" data-step="-1" aria-label="Previous period">${icons.left}</button>` : '<span></span>'}
+      <span class="period-label">${esc(periodLabel(range))}</span>
+      ${stepping ? `<button class="icon-btn bare" data-step="1" aria-label="Next period" ${offset >= 0 ? 'disabled' : ''}>${icons.right}</button>` : '<span></span>'}
     </div>
     <div class="swipe-area" data-swipe><div class="swipe-content" data-swipe-content>
     ${!list.length ? `
-      <div class="card form-block"><div class="empty">${EMPTY_ART}<strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
-        ${all.length ? 'Swipe or pick a longer period.' : 'Stats appear once you log trades.'}
+      <div class="card"><div class="empty">${EMPTY_ART}<strong>No trades ${all.length ? 'in this period' : 'yet'}</strong>
+        ${all.length ? (stepping ? 'Go back a period or pick a longer one.' : '') : 'Stats appear once you log trades.'}
         ${all.length ? '' : '<a class="btn btn-primary empty-cta" href="#/trade/new">Log a trade</a>'}</div></div>` : `
-    <section class="card equity-card form-block">
+    <div class="stats-top">
+    <section class="card equity-card">
       <div class="curve-tip" data-tip hidden></div>
       <div class="equity-head">
         <div>
-          <div class="label">Net P&amp;L · ${rangeLabel(days)}</div>
+          <div class="label">Net P&amp;L</div>
           <div class="equity-net ${tone(s.net)}">${money(s.net)}</div>
         </div>
-        <div class="equity-days">${days.length} day${days.length === 1 ? '' : 's'}</div>
+        <div class="equity-days">${s.count} trade${s.count === 1 ? '' : 's'} · ${days.length} day${days.length === 1 ? '' : 's'}</div>
       </div>
+      <div class="equity-sub num">Gross ${money(gf.gross)} · Fees ${moneyPlain(gf.fees)}</div>
       <div data-curve></div>
       <div class="equity-axis">
         <span>${shortDate(days[0].day)}</span>
@@ -131,40 +150,24 @@ export async function render(el, { settings, refresh }) {
       </div>
     </section>
 
-    <div class="tiles">
-      <div class="card tile"><div class="label">Win rate</div>
-        <div class="big">${pct(s.winRate)}</div>
-        <div class="sub">${s.wins} W · ${s.losses} L${s.breakeven ? ` · ${s.breakeven} BE` : ''}</div></div>
-      <div class="card tile"><div class="label">Profit factor</div>
-        <div class="big">${ratio(s.profitFactor)}</div>
-        <div class="sub">${dollars(s.grossWins)} won / ${dollars(s.grossLosses)} lost</div></div>
-      <div class="card tile"><div class="label">Avg win / loss</div>
-        <div class="two"><span class="pos">${money(s.avgWin)}</span><br><span class="neg">${money(s.avgLoss)}</span></div></div>
-      <div class="card tile"><div class="label">Expectancy</div>
-        <div class="big ${tone(s.expectancy)}">${money(s.expectancy)}</div>
-        <div class="sub">per trade · ${s.count} trade${s.count === 1 ? '' : 's'}</div></div>
-      <div class="card tile"><div class="label">Max drawdown</div>
-        <div class="big ${tone(dd.amount)}">${money(dd.amount)}</div>
-        <div class="sub">${dd.amount < 0 ? `${dd.peakAt ? shortDate(dd.peakAt) : 'Start'} → ${shortDate(dd.troughAt)}` : 'No drawdown'}</div></div>
-      <div class="card tile"><div class="label">Best / worst day</div>
-        <div class="two"><span class="${tone(bw.best.net)}">${money(bw.best.net)}</span><br><span class="${tone(bw.worst.net)}">${money(bw.worst.net)}</span></div>
-        <div class="sub">${shortDate(bw.best.day)} / ${shortDate(bw.worst.day)}</div></div>
+    <section class="card tiles" aria-label="Key numbers">
+      ${tile('Win rate', pct(s.winRate), `${s.wins} W · ${s.losses} L${s.breakeven ? ` · ${s.breakeven} BE` : ''}`)}
+      ${tile('Profit factor', ratio(s.profitFactor), `${dollars(s.grossWins)} won · ${dollars(s.grossLosses)} lost`)}
+      ${tile('Expectancy', money(s.expectancy), 'net per trade', tone(s.expectancy))}
+      ${tile('Avg R', ar.avg === null ? '—' : rMult(ar.avg), ar.count ? `${ar.count} of ${s.count} trades have a stop` : 'Add stops to see R', ar.avg === null ? '' : tone(ar.avg))}
+      ${tile('Avg win / loss', pair(s.avgWin, s.avgLoss), '', 'two')}
+      ${tile('Largest win / loss', pair(big.win ? big.win.m.net : null, big.loss ? big.loss.m.net : null), '', 'two')}
+      ${tile('Max drawdown', money(dd.amount), dd.amount < 0 ? `${dd.peakAt ? shortDate(dd.peakAt) : 'Start'} → ${shortDate(dd.troughAt)}` : 'None', tone(dd.amount))}
+      ${tile('Best / worst day', pair(bw.best.net, bw.worst.net), `${shortDate(bw.best.day)} · ${shortDate(bw.worst.day)}`, 'two')}
+      ${tile('Green days', `${gd.green}/${gd.days}`, pct(gd.days ? gd.green / gd.days : null) + ' of days traded')}
+      ${tile('Longest streak', `${st.wins}W · ${st.losses}L`, 'wins · losses in a row')}
+    </section>
     </div>
 
+    <div class="stats-sections">
     <section class="card card-pad">
       <h2 class="bars-title">By entry reason</h2>
       ${barsHtml(setups, (r) => r.setup, (r) => r.net, (r) => r.count)}
-    </section>
-
-    <section class="card card-pad">
-      <h2 class="bars-title">By time of day</h2>
-      ${barsHtml(hours, (r) => hourLabel(r.key), (r) => r.net, (r) => r.count, winOf)}
-      <p class="note">Hour the trade was entered, in this phone’s time zone.</p>
-    </section>
-
-    <section class="card card-pad">
-      <h2 class="bars-title">By weekday</h2>
-      ${barsHtml(weekdays, (r) => DOW[r.key], (r) => r.net, (r) => r.count, winOf)}
     </section>
 
     ${breakdowns.map((b) => `
@@ -176,39 +179,68 @@ export async function render(el, { settings, refresh }) {
     </section>`).join('')}
 
     <section class="card card-pad">
+      <h2 class="bars-title">By grade</h2>
+      ${grades.length ? barsHtml(grades, (r) => `Grade ${r.value}`, (r) => r.net, (r) => r.count, winOf)
+        : '<p class="muted" style="margin:0">No graded trades in this period.</p>'}
+    </section>
+
+    <section class="card card-pad">
       <h2 class="bars-title"><span>Cost of mistakes</span>${mistakes.length ? `<span class="num neg">${money(mistakeTotal)}</span>` : ''}</h2>
       ${mistakes.length
         ? barsHtml(mistakes, (r) => r.mistake, (r) => r.cost, (r) => r.count)
         : '<p class="muted" style="margin:0">No losing trades tagged with a mistake in this period.</p>'}
-      ${mistakes.length ? '<p class="note">Sum of net P&amp;L of losing trades tagged with each mistake. A trade with two mistakes counts toward both.</p>' : ''}
-    </section>`}
+      ${mistakes.length ? '<p class="note">Net P&amp;L of losing trades tagged with each mistake. A trade with two mistakes counts toward both.</p>' : ''}
+    </section>
+
+    <section class="card card-pad">
+      <h2 class="bars-title">By time of day</h2>
+      ${barsHtml(hours, (r) => hourLabel(r.key), (r) => r.net, (r) => r.count, winOf)}
+      <p class="note">Hour of entry, in this device’s time zone.</p>
+    </section>
+
+    <section class="card card-pad">
+      <h2 class="bars-title">By weekday</h2>
+      ${barsHtml(weekdays, (r) => DOW[r.key], (r) => r.net, (r) => r.count, winOf)}
+    </section>
+    </div>`}
     </div></div>`;
 
   const curveEl = el.querySelector('[data-curve]');
   if (curveEl) {
-    curveEl.innerHTML = curveSvg(curve, Math.max(200, Math.round(curveEl.clientWidth)));
+    // On wide screens the curve sits beside the key numbers, so it gets their height.
+    curveEl.innerHTML = curveSvg(curve, Math.max(200, Math.round(curveEl.clientWidth)), wideQuery.matches ? 300 : 150);
     scrubber(curveEl, el.querySelector('[data-tip]'));
   }
 
-  const keys = PERIODS.map(([k]) => k);
   const setPeriod = (k) => {
     if (!k || k === period) return;
-    slideDir = keys.indexOf(k) > keys.indexOf(period) ? 1 : -1;
     period = k;
+    offset = 0;
+    refresh();
+  };
+  const step = (dir) => {
+    if (!stepping || offset + dir > 0) return;
+    offset += dir;
+    slideDir = dir;
     refresh();
   };
   const content = el.querySelector('[data-swipe-content]');
   slideIn(content, slideDir);
   slideDir = 0;
-  pageSwipe(el.querySelector('[data-swipe]'), content, {
-    canGo: (dir) => !!keys[keys.indexOf(period) + dir],
-    onSwipe: (dir) => setPeriod(keys[keys.indexOf(period) + dir]),
-    shouldStart: (e) => !e.target.closest('[data-curve]'),
-  });
+  // Swipe = previous / next period of the same length, like the calendar.
+  if (stepping) {
+    pageSwipe(el.querySelector('[data-swipe]'), content, {
+      canGo: (dir) => offset + dir <= 0,
+      onSwipe: (dir) => step(dir),
+      shouldStart: (e) => !e.target.closest('[data-curve]'),
+    });
+  }
 
   el.onclick = (e) => {
     const b = e.target.closest('[data-period]');
-    if (b) setPeriod(b.dataset.period);
+    if (b) { setPeriod(b.dataset.period); return; }
+    const st_ = e.target.closest('[data-step]');
+    if (st_ && !st_.disabled) step(Number(st_.dataset.step));
   };
 }
 
